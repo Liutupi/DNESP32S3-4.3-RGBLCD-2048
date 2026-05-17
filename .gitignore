@@ -1,0 +1,7 @@
+build/
+managed_components/
+*.old
+sdkconfig.old
+dependencies.lock
+.vscode/
+.idea/
