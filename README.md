@@ -1,6 +1,6 @@
-# DNESP32S3 2048 Game
+# DNESP32S3 Game Center
 
-基于 **正点原子 DNESP32S3** 开发板的触屏版 2048 游戏。
+基于 **正点原子 DNESP32S3** 开发板的触屏小游戏集合，带分级菜单。
 
 | 项目 | 说明 |
 |------|------|
@@ -23,7 +23,9 @@
 │   ├── main.c                  # app_main() -> lvgl_demo()
 │   └── APP/
 │       ├── lvgl_demo.c / .h    # LVGL 移植层：显示、触摸、时基
+│       ├── menu.c / .h         # 主菜单（分级选择游戏）
 │       ├── game2048.c / .h     # 2048 游戏逻辑与 UI
+│       ├── reaction_test.c / .h # 反应速度测试游戏
 │       └── (依赖 components/BSP 中的 LCD/TOUCH 驱动)
 ├── components/
 │   └── BSP/                    # 正点原子 BSP（RGB LCD、GT9xxx、XL9555 等）
@@ -44,8 +46,10 @@
 ```
 
 **关键修改点**：
-- `lvgl_demo.c` 中把原来的 `lv_demo_music()` 替换为 `game2048_start()`。
+- `lvgl_demo.c` 中把原来的 `lv_demo_music()` 替换为 `menu_start()`，启动后进入 Game Center 主菜单。
 - `game2048.c` 使用 LVGL v8 的 `lv_obj_create(NULL)` + `lv_scr_load()` 创建新屏幕，**不能直接 `lv_obj_clean(lv_scr_act())`**，否则会删掉 `lv_port_indev_init()` 中创建的 `debug_label` 和 `cursor_obj`，导致 `touchpad_read` 访问悬空指针而 `LoadProhibited` 崩溃。
+- `menu.c` 在主屏幕（默认屏幕）上构建菜单 UI，避免启动时屏幕切换的复杂性问题。
+- 所有游戏通过 `menu_go_back()` 返回主菜单，该函数加载菜单屏幕并删除游戏屏幕。
 
 ---
 
@@ -119,14 +123,51 @@ Backtrace: ... lvgl_demo.c:264 ...
 **根因**：`game2048_start()` 最初用了 `lv_obj_clean(scr)` 清屏，把 `lv_port_indev_init()` 在同一屏幕上创建的 `debug_label` / `cursor_obj` 删掉了。但 `touchpad_read()` 回调仍持有该指针，每次定时器调用都会访问已释放内存。
 **解决**：改为 `lv_obj_t *scr = lv_obj_create(NULL); lv_scr_load(scr);` 创建新屏幕并切换，旧屏幕保留在内存中供回调安全访问。
 
-### 坑 5：音频和 RGB LCD 不能同时工作
-**现象**：需要音频时发现无输出。
-**根因**：硬件上 RGB LCD 和 I2S 音频共用 GPIO（IO3/IO9/IO10/IO14/IO46），详见《DNESP32S3 V1.0 硬件参考手册》和《刷机指南》。
-**结论**：使用 4.3" RGB 屏时，板载 ES8388/MD8002A 音频不可用。如需音频，换用 SPI LCD（1.3"/2.4"）或外接 I2S DAC 到空闲 GPIO。
+### 坑 6：触摸按钮无反应（LVGL v8 事件冒泡缺陷）
+
+**现象**：屏幕上的按钮（如 "New Game"、"Menu"）点击无任何响应，但触摸硬件正常。
+
+**根因**：LVGL v8 的 `lv_btn` 内部添加 `lv_label` 作为子对象后，Label 在 z-order 上位于按钮之上。`lv_obj_hit_test()` 判定 Label 为 `LV_OBJ_FLAG_CLICKABLE`（默认所有对象均此 flag），因此 indev 将触摸事件分发给 Label 而非 Button。Label 无事件回调 → 事件被丢弃。
+
+**关键源码**（`lv_obj_pos.c:949`）：
+```c
+bool lv_obj_hit_test(lv_obj_t * obj, const lv_point_t * point)
+{
+    if(!lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) return false;
+    ...
+}
+```
+
+所有 `lv_obj_create()` 创建的对象默认带 `LV_OBJ_FLAG_CLICKABLE`（`lv_obj.c:436`）。
+
+**解决**：
+1. **方案 A（推荐）**：在按钮 Label 上也注册相同的事件回调。
+   ```c
+   lv_obj_add_event_cb(btn_label, btn_callback, LV_EVENT_RELEASED, NULL);
+   ```
+2. **方案 B**：使用全屏透明触摸层 + 坐标 `hit_test`（menu.c 采用此方案）。
+3. **方案 C**：`lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE)`（但这会使 Label 完全不可交互，indev 会继续搜索到 Button）。
+
+### 坑 7：新屏幕触摸失效
+
+**现象**：`lv_obj_create(NULL)` + `lv_scr_load()` 创建的新屏幕上所有触摸事件不响应。
+
+**根因**：`lv_obj_create(NULL)` 创建的屏幕对象没有与任何 display 关联时，`lv_scr_load()` 可能无法正确设置活动屏幕。
+
+**解决**：主菜单直接在 `lv_port_indev_init()` 创建的默认屏幕上构建（`lv_scr_act()`），游戏屏幕用 `lv_obj_create(NULL)` + `lv_scr_load()` 创建。返回菜单时通过 `menu_go_back()` 切换回默认屏并删除游戏屏。
+
+
+
+## 🎮 游戏列表
+
+| 游戏 | 文件 | 玩法 |
+|------|------|------|
+| **2048** | `game2048.c/h` | 在 4×4 棋盘上滑动合并数字方块，达到 2048 即胜利 |
+| **Reaction Test** | `reaction_test.c/h` | 等待屏幕变绿后尽快点击，测试反应速度（毫秒级） |
+
+主菜单 `menu.c/h` 启动后显示 Game Center，触摸卡片选择游戏。每个游戏内有 "Menu" 按钮可返回。
 
 ---
-
-## 🔧 已知限制
 
 | 限制 | 说明 |
 |------|------|
@@ -154,10 +195,15 @@ idf.py fullclean
 ```
 
 ### 3. 替换入口函数
-打开 `main/APP/lvgl_demo.c`，把 `game2048_start()` 换成你的新入口：
+打开 `main/APP/lvgl_demo.c`，把 `menu_start()` 换成你的新入口，或在 `menu.c` 中添加新的游戏卡片：
+
 ```c
-// game2048_start();   // 注释掉旧的
-tetris_start();       // 换成你的新游戏入口
+// 方式1: 直接替换入口（跳过菜单）
+// menu_start();          // 注释掉菜单
+mygame_start();           // 直接启动你的游戏
+
+// 方式2: 在菜单中添加新卡片
+// 在 menu.c 中仿照现有卡片添加 create_card() 调用
 ```
 
 在 `main/APP/` 下新建 `tetris.c` / `tetris.h`，实现 `void tetris_start(void)`。
@@ -206,4 +252,6 @@ idf.py -p COM10 flash
 4. **烧录端口**：默认 COM10，波特率 460800。
 5. **崩溃调试**：如果遇到 `Guru Meditation Error`，用 `xtensa-esp32s3-elf-addr2line.exe -e build/lvgl.elf <PC地址>` 解码回溯。
 6. **LVGL 屏幕管理**：不要对当前活动屏幕做 `lv_obj_clean()` 来替换 UI，除非你能确保所有回调/指针都已更新。推荐用 `lv_obj_create(NULL)` + `lv_scr_load()`。
-7. **开发新游戏**：以本仓库为模板，复制 → 改 `lvgl_demo.c` 入口 → 新建 `main/APP/xxx.c` 实现新游戏 → `idf.py fullclean && build && flash`。
+7. **LVGL v8 触摸事件**：`lv_btn` 内的 `lv_label` 会拦截触摸事件（因默认 `LV_OBJ_FLAG_CLICKABLE`）。必须在 Label 上也注册事件回调，或使用全屏透明触摸层 + 坐标判断方案。
+8. **菜单架构**：主菜单在默认屏幕（`lv_scr_act()`）上构建，各游戏创建独立屏幕。返回菜单用 `menu_go_back()` 切换回默认屏。
+9. **开发新游戏**：以本仓库为模板，复制 → 在 `menu.c` 中添加卡片 → 新建 `main/APP/xxx.c` 实现新游戏 → `idf.py fullclean && build && flash`。

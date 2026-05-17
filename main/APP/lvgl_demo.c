@@ -19,7 +19,7 @@
  */
 
 #include "lvgl_demo.h"
-#include "game2048.h"
+#include "menu.h"
 #include "lcd.h"
 #include "touch.h"
 #include "esp_timer.h"
@@ -47,12 +47,8 @@ void lvgl_demo(void)
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));     /* 创建定时器 */
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, 1 * 1000));           /* 启动定时器 */
 
-    /* 官方demo,需要在SDK Configuration中开启对应Demo */
-    game2048_start();      
-    // lv_demo_benchmark();
-    // lv_demo_widgets();
-    // lv_demo_stress();
-    // lv_demo_keypad_encoder();
+    /* 主菜单入口 */
+    menu_start();
 
     while (1)
     {

@@ -10,6 +10,7 @@
  */
 
 #include "game2048.h"
+#include "menu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -349,6 +350,15 @@ static void new_game_event_cb(lv_event_t *e)
 }
 
 /**
+ * @brief Menu button callback
+ */
+static void menu_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    menu_go_back();
+}
+
+/**
  * @brief Create score box (SCORE or BEST)
  */
 static lv_obj_t *create_score_box(lv_obj_t *parent, const char *title, int x, int y)
@@ -464,12 +474,27 @@ void game2048_start(void)
     lv_obj_set_pos(btn, info_x, info_y + 120);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x8F7A66), 0);
     lv_obj_set_style_radius(btn, 6, 0);
-    lv_obj_add_event_cb(btn, new_game_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(btn, new_game_event_cb, LV_EVENT_RELEASED, NULL);
 
     lv_obj_t *btn_lbl = lv_label_create(btn);
     lv_label_set_text(btn_lbl, "New Game");
     lv_obj_set_style_text_color(btn_lbl, lv_color_hex(0xF9F6F2), 0);
     lv_obj_center(btn_lbl);
+    lv_obj_add_event_cb(btn_lbl, new_game_event_cb, LV_EVENT_RELEASED, NULL);
+
+    /* Menu button */
+    lv_obj_t *menu_btn = lv_btn_create(scr);
+    lv_obj_set_size(menu_btn, 120, 40);
+    lv_obj_set_pos(menu_btn, info_x, info_y + 170);
+    lv_obj_set_style_bg_color(menu_btn, lv_color_hex(0xBBADA0), 0);
+    lv_obj_set_style_radius(menu_btn, 6, 0);
+    lv_obj_add_event_cb(menu_btn, menu_btn_cb, LV_EVENT_RELEASED, NULL);
+
+    lv_obj_t *menu_btn_lbl = lv_label_create(menu_btn);
+    lv_label_set_text(menu_btn_lbl, "Menu");
+    lv_obj_set_style_text_color(menu_btn_lbl, lv_color_hex(0xF9F6F2), 0);
+    lv_obj_center(menu_btn_lbl);
+    lv_obj_add_event_cb(menu_btn_lbl, menu_btn_cb, LV_EVENT_RELEASED, NULL);
 
     /* Instructions */
     lv_obj_t *hint = lv_label_create(scr);
