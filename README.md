@@ -123,6 +123,65 @@ Backtrace: ... lvgl_demo.c:264 ...
 
 ---
 
+## 🔄 基于本项目开发新游戏/软件的通用流程
+
+> 本项目是一个**开箱即用的 LVGL 模板**。开发新软件时，不要从零新建项目，直接复制本仓库，改代码即可。
+
+### 1. 复制项目到纯英文路径
+```powershell
+# 例如做一个俄罗斯方块
+Copy-Item -Recurse D:\esp_project\2048 D:\esp_project\tetris
+cd D:\esp_project\tetris
+```
+
+### 2. 清理旧编译产物
+```powershell
+idf.py fullclean
+```
+
+### 3. 替换入口函数
+打开 `main/APP/lvgl_demo.c`，把 `game2048_start()` 换成你的新入口：
+```c
+// game2048_start();   // 注释掉旧的
+tetris_start();       // 换成你的新游戏入口
+```
+
+在 `main/APP/` 下新建 `tetris.c` / `tetris.h`，实现 `void tetris_start(void)`。
+
+### 4. 编译 & 烧录
+```powershell
+C:\Users\Administrator\esp-idf\export.ps1
+idf.py build
+idf.py -p COM10 flash
+```
+
+---
+
+## 🛠️ 常见需求速查（给 AI）
+
+| 需求 | 操作 |
+|------|------|
+| **加新图片/字体** | 用 [LVGL Font Converter](https://lvgl.io/tools/fontconverter) 生成 `.c` 文件放到 `main/APP/`，`main/CMakeLists.txt` 已包含 `APP` 目录，无需额外修改 |
+| **加 WiFi / 网络** | 代码里直接 `#include "esp_wifi.h"` 调用；如需改配置可用 `idf.py menuconfig` |
+| **换屏幕（SPI 屏）** | 需替换 `components/BSP/RGBLCD/` 相关驱动，建议 copy 正点原子对应屏幕例程的 BSP |
+| **音频（I2S）** | ⚠️ 4.3" RGB LCD 和板载 ES8388 **引脚冲突**，不能同时用。换 SPI 屏后才可用音频 |
+| **改 sdkconfig** | `idf.py menuconfig` 图形化配置，或手动改 `sdkconfig` |
+| **崩溃定位** | 记下串口 `Backtrace:` 地址，执行 `xtensa-esp32s3-elf-addr2line.exe -e build/lvgl.elf <地址>` |
+
+---
+
+## 🐛 编译/烧录问题速查（给 AI）
+
+| 现象 | 解决 |
+|------|------|
+| `UnicodeDecodeError` | 路径有中文，复制到 `D:\esp_project\xxx` |
+| `file format not recognized` / `.a` 损坏 | `idf.py fullclean`，再不行删掉 `managed_components` |
+| `Guru Meditation Error` / 循环重启 | 看 `Backtrace` 用 `addr2line` 定位；重点检查是否访问了已删除的 LVGL 对象 |
+| 烧录失败 / 连接超时 | 按住 BOOT 再按 RST 进入下载模式；检查 COM 口号；换 USB 线 |
+| 触摸没反应 | 确认 GT9xxx 初始化日志 `CTP:1158` 已输出；检查 `lv_port_indev_init()` |
+
+---
+
 ## 📝 给 AI / 大模型的上下文
 
 如果你是 AI Agent，接到用户说"帮我编译/修改这个仓库"，请务必注意：
@@ -133,3 +192,4 @@ Backtrace: ... lvgl_demo.c:264 ...
 4. **烧录端口**：默认 COM10，波特率 460800。
 5. **崩溃调试**：如果遇到 `Guru Meditation Error`，用 `xtensa-esp32s3-elf-addr2line.exe -e build/lvgl.elf <PC地址>` 解码回溯。
 6. **LVGL 屏幕管理**：不要对当前活动屏幕做 `lv_obj_clean()` 来替换 UI，除非你能确保所有回调/指针都已更新。推荐用 `lv_obj_create(NULL)` + `lv_scr_load()`。
+7. **开发新游戏**：以本仓库为模板，复制 → 改 `lvgl_demo.c` 入口 → 新建 `main/APP/xxx.c` 实现新游戏 → `idf.py fullclean && build && flash`。
