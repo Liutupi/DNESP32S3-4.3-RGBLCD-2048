@@ -8,6 +8,7 @@
 #include "menu.h"
 #include "game2048.h"
 #include "reaction_test.h"
+#include "bird_launcher.h"
 #include <stdio.h>
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -18,16 +19,17 @@ extern lv_obj_t * debug_label;
 
 #define CARD_X      220
 #define CARD_W      360
-#define CARD1_Y     130
-#define CARD1_H     140
-#define CARD2_Y     300
-#define CARD2_H     140
+#define CARD1_Y     120
+#define CARD2_Y     245
+#define CARD3_Y     370
+#define CARD_H      105
 
 static int hit_test(lv_coord_t x, lv_coord_t y)
 {
     if (x >= CARD_X && x <= CARD_X + CARD_W) {
-        if (y >= CARD1_Y && y <= CARD1_Y + CARD1_H) return 1;
-        if (y >= CARD2_Y && y <= CARD2_Y + CARD2_H) return 2;
+        if (y >= CARD1_Y && y <= CARD1_Y + CARD_H) return 1;
+        if (y >= CARD2_Y && y <= CARD2_Y + CARD_H) return 2;
+        if (y >= CARD3_Y && y <= CARD3_Y + CARD_H) return 3;
     }
     return 0;
 }
@@ -53,6 +55,8 @@ static void touch_cb(lv_event_t *e)
             game2048_start();
         } else if (card == 2) {
             reaction_test_start();
+        } else if (card == 3) {
+            bird_launcher_start();
         }
     }
 }
@@ -84,7 +88,7 @@ void menu_start(void)
 
     /* Card 1: 2048 */
     lv_obj_t *c1 = lv_obj_create(scr);
-    lv_obj_set_size(c1, 360, 140);
+    lv_obj_set_size(c1, CARD_W, CARD_H);
     lv_obj_set_pos(c1, CARD_X, CARD1_Y);
     lv_obj_set_style_bg_color(c1, lv_color_hex(0xE94560), 0);
     lv_obj_set_style_radius(c1, 16, 0);
@@ -101,11 +105,11 @@ void menu_start(void)
     lv_label_set_text(c1s, "Swipe to merge tiles & reach 2048");
     lv_obj_set_style_text_font(c1s, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c1s, lv_color_hex(0xECF0F1), 0);
-    lv_obj_align(c1s, LV_ALIGN_BOTTOM_LEFT, 24, -16);
+    lv_obj_align(c1s, LV_ALIGN_BOTTOM_LEFT, 24, -12);
 
     /* Card 2: Reaction Test */
     lv_obj_t *c2 = lv_obj_create(scr);
-    lv_obj_set_size(c2, 360, 140);
+    lv_obj_set_size(c2, CARD_W, CARD_H);
     lv_obj_set_pos(c2, CARD_X, CARD2_Y);
     lv_obj_set_style_bg_color(c2, lv_color_hex(0x0F3460), 0);
     lv_obj_set_style_radius(c2, 16, 0);
@@ -122,7 +126,28 @@ void menu_start(void)
     lv_label_set_text(c2s, "Tap when green to test your speed");
     lv_obj_set_style_text_font(c2s, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c2s, lv_color_hex(0xECF0F1), 0);
-    lv_obj_align(c2s, LV_ALIGN_BOTTOM_LEFT, 24, -16);
+    lv_obj_align(c2s, LV_ALIGN_BOTTOM_LEFT, 24, -12);
+
+    /* Card 3: Bird Launcher */
+    lv_obj_t *c3 = lv_obj_create(scr);
+    lv_obj_set_size(c3, CARD_W, CARD_H);
+    lv_obj_set_pos(c3, CARD_X, CARD3_Y);
+    lv_obj_set_style_bg_color(c3, lv_color_hex(0x6C3483), 0);
+    lv_obj_set_style_radius(c3, 16, 0);
+    lv_obj_set_style_border_width(c3, 0, 0);
+    lv_obj_clear_flag(c3, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *c3t = lv_label_create(c3);
+    lv_label_set_text(c3t, "Bird Launcher");
+    lv_obj_set_style_text_font(c3t, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(c3t, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_align(c3t, LV_ALIGN_TOP_LEFT, 24, 20);
+
+    lv_obj_t *c3s = lv_label_create(c3);
+    lv_label_set_text(c3s, "Drag to aim, release to launch!");
+    lv_obj_set_style_text_font(c3s, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(c3s, lv_color_hex(0xECF0F1), 0);
+    lv_obj_align(c3s, LV_ALIGN_BOTTOM_LEFT, 24, -12);
 
     /* Transparent touch layer on top */
     lv_obj_t *touch = lv_obj_create(scr);
