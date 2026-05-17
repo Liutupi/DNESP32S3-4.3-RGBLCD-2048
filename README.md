@@ -25,8 +25,22 @@
 │       ├── lvgl_demo.c / .h    # LVGL 移植层：显示、触摸、时基
 │       ├── game2048.c / .h     # 2048 游戏逻辑与 UI
 │       └── (依赖 components/BSP 中的 LCD/TOUCH 驱动)
-└── components/
-    └── BSP/                    # 正点原子 BSP（RGB LCD、GT9xxx、XL9555 等）
+├── components/
+│   └── BSP/                    # 正点原子 BSP（RGB LCD、GT9xxx、XL9555 等）
+└── docs/                       # 📚 硬件文档（原理图 / 管脚表 / 芯片手册）
+    ├── PINOUT.md               # IO 管脚分配表（大模型可直接读取）
+    ├── hardware/
+    │   ├── DNESP32S3_V1.0_硬件参考手册.pdf
+    │   ├── DNESP32S3_V1.2_原理图.pdf
+    │   └── DNESP32S3_IO管脚分配表.xlsx
+    ├── datasheets/             # 关键芯片数据手册
+    │   ├── ES8388-DS.pdf       # 音频编解码器
+    │   ├── GT9147_数据手册.pdf  # 触摸芯片
+    │   ├── CH340.pdf           # USB 转串口
+    │   └── XL9555_...pdf       # IO 扩展芯片
+    └── guides/
+        ├── DNESP32S3_刷机指南.md
+        └── LVGL移植教程.pdf
 ```
 
 **关键修改点**：
