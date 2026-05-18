@@ -55,6 +55,8 @@ static lv_coord_t g_press_y = 0;
 static lv_color_t *g_cbuf[2] = {NULL, NULL};  /* buffer 对应 canvas[0] 和 canvas[1] */
 static int         g_current   = 0;             /* 当前哪个 canvas 不透明 (0 或 1) */
 static bool        g_animating = false;         /* 动画进行中，禁止并发切换 */
+static int         g_preload_idx  = -1;         /* 已预加载的照片索引 */
+static bool        g_preload_done = false;      /* 预加载是否成功 */
 
 /* ── TJpgDec 解码上下文 ───────────────────────── */
 typedef struct {
@@ -88,7 +90,7 @@ static uint16_t tjpgd_output_cb(JDEC *jd, void *bitmap, JRECT *rect)
     int block_w      = (int)rect->right - (int)rect->left + 1;
 
     if (!ctx->stretch) {
-        /* ── 大图片：居中裁剪模式 ── */
+        /* ── 大图片：居中裁剪模式，memcpy 整行复制 ── */
         int dst_x0 = (int)rect->left   + ctx->off_x;
         int dst_y0 = (int)rect->top    + ctx->off_y;
         int dst_x1 = (int)rect->right  + ctx->off_x;
@@ -99,13 +101,15 @@ static uint16_t tjpgd_output_cb(JDEC *jd, void *bitmap, JRECT *rect)
         int clip_x1 = dst_x1 >= ctx->fb_w ? ctx->fb_w - 1 : dst_x1;
         int clip_y1 = dst_y1 >= ctx->fb_h ? ctx->fb_h - 1 : dst_y1;
 
+        int copy_w = clip_x1 - clip_x0 + 1;
+        if (copy_w <= 0) return 1;
+
         for (int y = clip_y0; y <= clip_y1; y++) {
             int src_row = y - dst_y0;
-            for (int x = clip_x0; x <= clip_x1; x++) {
-                int src_col = x - dst_x0;
-                uint16_t px = src[src_row * block_w + src_col];
-                ctx->fb[y * ctx->fb_w + x].full = px;
-            }
+            int src_col = clip_x0 - dst_x0;
+            memcpy(&ctx->fb[y * ctx->fb_w + clip_x0],
+                   &src[src_row * block_w + src_col],
+                   copy_w * sizeof(uint16_t));
         }
     } else {
         /* ── 小图片：拉伸到全屏（nearest-neighbor）── */
@@ -324,11 +328,34 @@ static void pv_fade_anim_cb(void *obj, int32_t v)
     lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
 }
 
+static void pv_preload_next(void)
+{
+    if (g_photo_count <= 1) return;
+
+    int next_idx = (g_photo_idx + 1) % g_photo_count;
+    if (next_idx == g_preload_idx && g_preload_done) return;  /* 已预加载 */
+
+    int buf_idx = 1 - g_current;
+    bool ok = pv_load_photo(next_idx, g_canvas[buf_idx], g_cbuf[buf_idx]);
+    g_preload_idx = next_idx;
+    g_preload_done = ok;
+    ESP_LOGI(TAG, "Preload [%d] %s", next_idx, ok ? "OK" : "FAIL");
+}
+
+static void pv_delayed_preload_cb(lv_timer_t *t)
+{
+    lv_timer_del(t);
+    pv_preload_next();
+}
+
 static void pv_anim_ready_cb(lv_anim_t *a)
 {
     (void)a;
-    g_current = 1 - g_current;   /* 动画完成后，当前显示的 canvas 切换 */
+    g_current = 1 - g_current;
     g_animating = false;
+
+    /* 延迟 200ms 后预加载，避免动画刚结束就阻塞 LVGL */
+    lv_timer_create(pv_delayed_preload_cb, 200, NULL);
 }
 
 static void pv_switch_to(int new_idx)
@@ -337,37 +364,47 @@ static void pv_switch_to(int new_idx)
 
     /* 计算目标索引 */
     int target = ((new_idx % g_photo_count) + g_photo_count) % g_photo_count;
-
-    /* 要加载到当前透明的那个 canvas */
     int next = 1 - g_current;
 
-    /* 尝试加载目标照片，如果失败则自动跳过 */
-    int try_idx = target;
-    int tried = 0;
-    bool ok = false;
-    while (tried < g_photo_count) {
-        ok = pv_load_photo(try_idx, g_canvas[next], g_cbuf[next]);
-        if (ok) {
-            g_photo_idx = try_idx;
-            break;
-        }
-        try_idx = (try_idx + 1) % g_photo_count;
-        tried++;
+    /* 如果目标已预加载，直接使用 */
+    bool need_load = true;
+    if (target == g_preload_idx && g_preload_done) {
+        need_load = false;
+        g_photo_idx = target;
+        ESP_LOGI(TAG, "Switch use preloaded %d", target);
     }
-    if (!ok) {
-        ESP_LOGE(TAG, "All %d photos failed to load", g_photo_count);
-        return;
+
+    if (need_load) {
+        int try_idx = target;
+        int tried = 0;
+        bool ok = false;
+        while (tried < g_photo_count) {
+            ok = pv_load_photo(try_idx, g_canvas[next], g_cbuf[next]);
+            if (ok) {
+                g_photo_idx = try_idx;
+                break;
+            }
+            try_idx = (try_idx + 1) % g_photo_count;
+            tried++;
+        }
+        if (!ok) {
+            ESP_LOGE(TAG, "All %d photos failed to load", g_photo_count);
+            return;
+        }
+        g_preload_done = false;  /* 同步加载会覆盖预加载内容 */
     }
 
     g_animating = true;
 
-    /* 新照片淡入，旧照片淡出 */
+    /* 淡入淡出 — 延长到 600ms 让低帧率下也有更多可见渐变帧 */
+    lv_obj_set_style_opa(g_canvas[next], LV_OPA_TRANSP, 0);
+
     lv_anim_t a_in;
     lv_anim_init(&a_in);
     lv_anim_set_var(&a_in, g_canvas[next]);
     lv_anim_set_exec_cb(&a_in, pv_fade_anim_cb);
     lv_anim_set_values(&a_in, LV_OPA_TRANSP, LV_OPA_COVER);
-    lv_anim_set_time(&a_in, 300);
+    lv_anim_set_time(&a_in, 600);
     lv_anim_set_path_cb(&a_in, lv_anim_path_ease_out);
     lv_anim_start(&a_in);
 
@@ -376,7 +413,7 @@ static void pv_switch_to(int new_idx)
     lv_anim_set_var(&a_out, g_canvas[g_current]);
     lv_anim_set_exec_cb(&a_out, pv_fade_anim_cb);
     lv_anim_set_values(&a_out, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_time(&a_out, 300);
+    lv_anim_set_time(&a_out, 600);
     lv_anim_set_path_cb(&a_out, lv_anim_path_ease_in);
     lv_anim_set_ready_cb(&a_out, pv_anim_ready_cb);
     lv_anim_start(&a_out);
@@ -515,8 +552,15 @@ void photoviewer_start(void)
     /* 9. 加载第一张 */
     g_photo_idx = 0;
     g_paused = false;
+    g_preload_idx = -1;
+    g_preload_done = false;
     pv_load_photo(g_photo_idx, g_canvas[0], g_cbuf[0]);
     pv_update_info();
+
+    /* 延迟预加载下一张，避免第一次切换阻塞 */
+    if (g_photo_count > 1) {
+        lv_timer_create(pv_delayed_preload_cb, 500, NULL);
+    }
 
     /* 10. 自动播放定时器 */
     if (g_auto_timer) { lv_timer_del(g_auto_timer); g_auto_timer = NULL; }
@@ -541,4 +585,6 @@ void photoviewer_stop(void)
     g_paused = false;
     g_current = 0;
     g_animating = false;
+    g_preload_idx = -1;
+    g_preload_done = false;
 }
