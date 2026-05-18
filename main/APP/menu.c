@@ -9,6 +9,7 @@
 #include "game2048.h"
 #include "reaction_test.h"
 #include "bird_launcher.h"
+#include "photoviewer.h"
 #include <stdio.h>
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -17,12 +18,13 @@ static lv_coord_t g_press_y = 0;
 
 extern lv_obj_t * debug_label;
 
-#define CARD_X      220
-#define CARD_W      360
-#define CARD1_Y     120
-#define CARD2_Y     245
-#define CARD3_Y     370
-#define CARD_H      105
+#define CARD_X      200
+#define CARD_W      400
+#define CARD1_Y      95
+#define CARD2_Y     190
+#define CARD3_Y     285
+#define CARD4_Y     375
+#define CARD_H       85
 
 static int hit_test(lv_coord_t x, lv_coord_t y)
 {
@@ -30,6 +32,7 @@ static int hit_test(lv_coord_t x, lv_coord_t y)
         if (y >= CARD1_Y && y <= CARD1_Y + CARD_H) return 1;
         if (y >= CARD2_Y && y <= CARD2_Y + CARD_H) return 2;
         if (y >= CARD3_Y && y <= CARD3_Y + CARD_H) return 3;
+        if (y >= CARD4_Y && y <= CARD4_Y + CARD_H) return 4;
     }
     return 0;
 }
@@ -57,6 +60,8 @@ static void touch_cb(lv_event_t *e)
             reaction_test_start();
         } else if (card == 3) {
             bird_launcher_start();
+        } else if (card == 4) {
+            photoviewer_start();
         }
     }
 }
@@ -81,8 +86,8 @@ void menu_start(void)
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *hl = lv_label_create(header);
-    lv_label_set_text(hl, "Game Center");
-    lv_obj_set_style_text_font(hl, &lv_font_montserrat_28, 0);
+    lv_label_set_text(hl, LV_SYMBOL_PLAY "  Game  &  Photo Center");
+    lv_obj_set_style_text_font(hl, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(hl, lv_color_hex(0xECF0F1), 0);
     lv_obj_center(hl);
 
@@ -91,63 +96,88 @@ void menu_start(void)
     lv_obj_set_size(c1, CARD_W, CARD_H);
     lv_obj_set_pos(c1, CARD_X, CARD1_Y);
     lv_obj_set_style_bg_color(c1, lv_color_hex(0xE94560), 0);
-    lv_obj_set_style_radius(c1, 16, 0);
+    lv_obj_set_style_radius(c1, 12, 0);
     lv_obj_set_style_border_width(c1, 0, 0);
+    lv_obj_set_style_pad_all(c1, 0, 0);
     lv_obj_clear_flag(c1, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *c1t = lv_label_create(c1);
-    lv_label_set_text(c1t, "2048");
-    lv_obj_set_style_text_font(c1t, &lv_font_montserrat_24, 0);
+    lv_label_set_text(c1t, LV_SYMBOL_SHUFFLE "  2048");
+    lv_obj_set_style_text_font(c1t, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(c1t, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_align(c1t, LV_ALIGN_TOP_LEFT, 24, 20);
+    lv_obj_set_pos(c1t, 20, 14);
 
     lv_obj_t *c1s = lv_label_create(c1);
     lv_label_set_text(c1s, "Swipe to merge tiles & reach 2048");
     lv_obj_set_style_text_font(c1s, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c1s, lv_color_hex(0xECF0F1), 0);
-    lv_obj_align(c1s, LV_ALIGN_BOTTOM_LEFT, 24, -12);
+    lv_obj_set_pos(c1s, 20, 52);
 
     /* Card 2: Reaction Test */
     lv_obj_t *c2 = lv_obj_create(scr);
     lv_obj_set_size(c2, CARD_W, CARD_H);
     lv_obj_set_pos(c2, CARD_X, CARD2_Y);
     lv_obj_set_style_bg_color(c2, lv_color_hex(0x0F3460), 0);
-    lv_obj_set_style_radius(c2, 16, 0);
+    lv_obj_set_style_radius(c2, 12, 0);
     lv_obj_set_style_border_width(c2, 0, 0);
+    lv_obj_set_style_pad_all(c2, 0, 0);
     lv_obj_clear_flag(c2, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *c2t = lv_label_create(c2);
-    lv_label_set_text(c2t, "Reaction Test");
-    lv_obj_set_style_text_font(c2t, &lv_font_montserrat_24, 0);
+    lv_label_set_text(c2t, LV_SYMBOL_LOOP "  Reaction Test");
+    lv_obj_set_style_text_font(c2t, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(c2t, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_align(c2t, LV_ALIGN_TOP_LEFT, 24, 20);
+    lv_obj_set_pos(c2t, 20, 14);
 
     lv_obj_t *c2s = lv_label_create(c2);
     lv_label_set_text(c2s, "Tap when green to test your speed");
     lv_obj_set_style_text_font(c2s, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c2s, lv_color_hex(0xECF0F1), 0);
-    lv_obj_align(c2s, LV_ALIGN_BOTTOM_LEFT, 24, -12);
+    lv_obj_set_pos(c2s, 20, 52);
 
     /* Card 3: Bird Launcher */
     lv_obj_t *c3 = lv_obj_create(scr);
     lv_obj_set_size(c3, CARD_W, CARD_H);
     lv_obj_set_pos(c3, CARD_X, CARD3_Y);
     lv_obj_set_style_bg_color(c3, lv_color_hex(0x6C3483), 0);
-    lv_obj_set_style_radius(c3, 16, 0);
+    lv_obj_set_style_radius(c3, 12, 0);
     lv_obj_set_style_border_width(c3, 0, 0);
+    lv_obj_set_style_pad_all(c3, 0, 0);
     lv_obj_clear_flag(c3, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *c3t = lv_label_create(c3);
-    lv_label_set_text(c3t, "Bird Launcher");
-    lv_obj_set_style_text_font(c3t, &lv_font_montserrat_24, 0);
+    lv_label_set_text(c3t, LV_SYMBOL_CHARGE "  Bird Launcher");
+    lv_obj_set_style_text_font(c3t, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(c3t, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_align(c3t, LV_ALIGN_TOP_LEFT, 24, 20);
+    lv_obj_set_pos(c3t, 20, 14);
 
     lv_obj_t *c3s = lv_label_create(c3);
     lv_label_set_text(c3s, "Drag to aim, release to launch!");
     lv_obj_set_style_text_font(c3s, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c3s, lv_color_hex(0xECF0F1), 0);
-    lv_obj_align(c3s, LV_ALIGN_BOTTOM_LEFT, 24, -12);
+    lv_obj_set_pos(c3s, 20, 52);
+
+    /* Card 4: Photo Viewer */
+    lv_obj_t *c4 = lv_obj_create(scr);
+    lv_obj_set_size(c4, CARD_W, CARD_H);
+    lv_obj_set_pos(c4, CARD_X, CARD4_Y);
+    lv_obj_set_style_bg_color(c4, lv_color_hex(0x145A32), 0);
+    lv_obj_set_style_radius(c4, 12, 0);
+    lv_obj_set_style_border_width(c4, 0, 0);
+    lv_obj_set_style_pad_all(c4, 0, 0);
+    lv_obj_clear_flag(c4, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *c4t = lv_label_create(c4);
+    lv_label_set_text(c4t, LV_SYMBOL_IMAGE "  Photo Viewer");
+    lv_obj_set_style_text_font(c4t, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(c4t, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_pos(c4t, 20, 14);
+
+    lv_obj_t *c4s = lv_label_create(c4);
+    lv_label_set_text(c4s, "Auto slideshow from SD card (/PHOTOS/)");
+    lv_obj_set_style_text_font(c4s, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(c4s, lv_color_hex(0xA9DFBF), 0);
+    lv_obj_set_pos(c4s, 20, 52);
 
     /* Transparent touch layer on top */
     lv_obj_t *touch = lv_obj_create(scr);

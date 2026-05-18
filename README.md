@@ -160,12 +160,13 @@ bool lv_obj_hit_test(lv_obj_t * obj, const lv_point_t * point)
 
 ## 🎮 游戏列表
 
-| 游戏 | 文件 | 玩法 |
+| 游戏/应用 | 文件 | 说明 |
 |------|------|------|
 | **2048** | `game2048.c/h` | 在 4×4 棋盘上滑动合并数字方块，达到 2048 即胜利 |
 | **Reaction Test** | `reaction_test.c/h` | 等待屏幕变绿后尽快点击，测试反应速度（毫秒级） |
+| **Photo Viewer** ⭐ | `photoviewer.c/h` | 从 SD 卡读取 JPEG 幻灯片播放，支持触摸切换、自动轮播 |
 
-主菜单 `menu.c/h` 启动后显示 Game Center，触摸卡片选择游戏。每个游戏内有 "Menu" 按钮可返回。
+主菜单 `menu.c/h` 启动后显示 Game & Photo Center，触摸卡片选择应用。每个应用内有 "Back" 按钮可返回。
 
 ---
 
@@ -173,8 +174,48 @@ bool lv_obj_hit_test(lv_obj_t * obj, const lv_point_t * point)
 |------|------|
 | 音频 | 与 4.3" RGB LCD 引脚冲突，不可用 |
 | 触摸 | 仅支持单点触摸（GT9xxx 已配置为单点模式） |
-| 存储 | 无 SD 卡/文件系统依赖，纯内存运行 |
+| 存储 | 2048/Reaction 纯内存运行；Photo Viewer 依赖 SD 卡 |
 | 最佳分数 | 未做 NVS 持久化，复位后清零 |
+
+---
+
+## 🖼️ Photo Viewer（照片幻灯片）
+
+从 **SD 卡**读取 JPEG 照片，全屏幻灯片播放。
+
+### 硬件要求
+- **SD 卡**：FAT32 格式，插入开发板 SD 卡槽（SPI2 接口）
+- **照片目录**：`/PHOTOS/*.jpg` 或根目录 `/*.jpg`
+- **照片格式**：Baseline JPEG（手机/相机默认输出）
+
+### 操作方式
+| 手势 | 功能 |
+|------|------|
+| 左滑 | 下一张 |
+| 右滑 | 上一张 |
+| 单击 | 暂停 / 继续自动播放 |
+| 左上角 Back | 返回主菜单 |
+
+### 照片显示策略
+- **大图片**（>800×480）：智能降采样 + 居中裁剪填满全屏（Cover 模式）
+- **小图片**（<800×480）：Nearest-neighbor 拉伸填满全屏
+- **推荐比例**：屏幕比例为 **5:3**（800×480），照片裁剪成 **5:3**（如 1600×960、4000×2400）可完整显示、不被裁剪
+
+### 关键技术点
+- **JPEG 解码**：TJpgDec（Tiny JPEG Decompressor），`JD_FORMAT=1` 输出 RGB565
+- **双缓冲**：双 PSRAM Canvas（800×480×2 × 2 ≈ 1.5MB），300ms 淡入淡出切换
+- **中文文件名**：`sdkconfig` 启用 FatFS LFN + Codepage 936（GBK）
+- **ESP-IDF v5.5 兼容**：`sdmmc_host_t` 需补充 `.check_buffer_alignment` 字段
+
+### 新增/修改的文件
+```
+main/APP/photoviewer.c/h      # 照片查看器核心
+main/APP/tjpgd.c/h            # TJpgDec 解码器
+components/BSP/SPI/spi.c/h    # SPI2 总线初始化（防重复初始化）
+components/BSP/SDIO/spi_sdcard.c/h  # SD 卡驱动（ESP-IDF v5.5 适配）
+components/BSP/CMakeLists.txt  # 添加 SDIO/SPI 到构建
+main/APP/menu.c               # 添加 Photo Viewer 菜单卡片
+```
 
 ---
 
@@ -253,5 +294,6 @@ idf.py -p COM10 flash
 5. **崩溃调试**：如果遇到 `Guru Meditation Error`，用 `xtensa-esp32s3-elf-addr2line.exe -e build/lvgl.elf <PC地址>` 解码回溯。
 6. **LVGL 屏幕管理**：不要对当前活动屏幕做 `lv_obj_clean()` 来替换 UI，除非你能确保所有回调/指针都已更新。推荐用 `lv_obj_create(NULL)` + `lv_scr_load()`。
 7. **LVGL v8 触摸事件**：`lv_btn` 内的 `lv_label` 会拦截触摸事件（因默认 `LV_OBJ_FLAG_CLICKABLE`）。必须在 Label 上也注册事件回调，或使用全屏透明触摸层 + 坐标判断方案。
-8. **菜单架构**：主菜单在默认屏幕（`lv_scr_act()`）上构建，各游戏创建独立屏幕。返回菜单用 `menu_go_back()` 切换回默认屏。
-9. **开发新游戏**：以本仓库为模板，复制 → 在 `menu.c` 中添加卡片 → 新建 `main/APP/xxx.c` 实现新游戏 → `idf.py fullclean && build && flash`。
+8. **菜单架构**：主菜单在默认屏幕（`lv_scr_act()`）上构建，各应用创建独立屏幕。返回菜单用 `menu_go_back()` 切换回默认屏。
+9. **Photo Viewer 屏幕管理**：双 Canvas 固定 z-order，通过 opacity 动画切换。**不要**用 `lv_obj_move_foreground()`，否则会遮挡 topbar/触摸层。
+10. **开发新应用**：以本仓库为模板，复制 → 在 `menu.c` 中添加卡片 → 新建 `main/APP/xxx.c` 实现新应用 → `idf.py fullclean && build && flash`。
