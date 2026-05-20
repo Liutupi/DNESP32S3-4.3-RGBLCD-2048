@@ -20,6 +20,7 @@
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "psa/crypto.h"
 #if __has_include("qweather_jwt_secret.h")
 #include "qweather_jwt_secret.h"
@@ -111,8 +112,15 @@ typedef enum {
 typedef enum {
     PAGE_MAIN,
     PAGE_SETTINGS,
-    PAGE_DONE
+    PAGE_DONE,
+    PAGE_WIFI
 } page_t;
+
+typedef struct {
+    char ssid[33];
+    int8_t rssi;
+    wifi_auth_mode_t authmode;
+} wifi_ap_item_t;
 
 typedef struct {
     char city[32];
@@ -145,6 +153,11 @@ static lv_obj_t *g_start_label;
 static lv_obj_t *g_pause_label;
 static lv_obj_t *g_page_title;
 static lv_obj_t *g_settings_list;
+static lv_obj_t *g_wifi_status_label;
+static lv_obj_t *g_wifi_list;
+static lv_obj_t *g_wifi_ssid_ta;
+static lv_obj_t *g_wifi_password_ta;
+static lv_obj_t *g_wifi_keyboard;
 
 static lv_timer_t *g_tick_timer;
 static EventGroupHandle_t g_wifi_events;
@@ -166,6 +179,13 @@ static bool g_net_started;
 static bool g_sntp_started;
 static bool g_weather_task_started;
 static volatile bool g_weather_dirty;
+static volatile bool g_wifi_scan_dirty;
+static volatile bool g_wifi_scan_busy;
+static char g_wifi_ssid[33];
+static char g_wifi_pass[65];
+static char g_selected_ssid[33];
+static wifi_ap_item_t g_wifi_scan_results[8];
+static int g_wifi_scan_count;
 static weather_info_t g_weather = {
     .city = "Zhongshan Nanlang",
     .temp = "26",
@@ -180,10 +200,35 @@ static const char *const g_weekdays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri
 static void show_main_page(void);
 static void show_settings_page(void);
 static void show_done_page(void);
+static void show_wifi_page(void);
+static void set_label(lv_obj_t *obj, const char *text);
+static void weather_set_local_status(const char *status);
+static void start_wifi_once(void);
+static void start_wifi_scan(void);
+static void save_and_connect_wifi(const char *ssid, const char *pass);
+static void update_wifi_scan_list(void);
 
 static bool has_text(const char *s)
 {
     return s && s[0] != '\0';
+}
+
+static const char *wifi_auth_name(wifi_auth_mode_t authmode)
+{
+    if (authmode == WIFI_AUTH_OPEN) return "Open";
+    if (authmode == WIFI_AUTH_WEP) return "WEP";
+    if (authmode == WIFI_AUTH_WPA_PSK) return "WPA";
+    if (authmode == WIFI_AUTH_WPA2_PSK) return "WPA2";
+    if (authmode == WIFI_AUTH_WPA_WPA2_PSK) return "WPA/WPA2";
+    if (authmode == WIFI_AUTH_WPA3_PSK) return "WPA3";
+    if (authmode == WIFI_AUTH_WPA2_WPA3_PSK) return "WPA2/WPA3";
+    return "Secure";
+}
+
+static void wifi_set_status(const char *status)
+{
+    set_label(g_wifi_status_label, status);
+    weather_set_local_status(status);
 }
 
 static int current_duration_for_mode(timer_mode_t mode)
@@ -382,6 +427,7 @@ static void tick_cb(lv_timer_t *timer)
 
     update_clock_labels();
     if (g_weather_dirty) update_weather_labels();
+    if (g_page == PAGE_WIFI && g_wifi_scan_dirty) update_wifi_scan_list();
 
     if (g_state == TIMER_RUNNING) {
         if (g_remaining_s > 0) {
@@ -430,6 +476,12 @@ static void on_settings(lv_event_t *e)
     show_settings_page();
 }
 
+static void on_wifi_settings(lv_event_t *e)
+{
+    (void)e;
+    show_wifi_page();
+}
+
 static void on_back(lv_event_t *e)
 {
     (void)e;
@@ -444,6 +496,40 @@ static void on_main(lv_event_t *e)
 {
     (void)e;
     show_main_page();
+}
+
+static void on_wifi_scan(lv_event_t *e)
+{
+    (void)e;
+    start_wifi_scan();
+}
+
+static void on_wifi_textarea_focus(lv_event_t *e)
+{
+    lv_obj_t *ta = lv_event_get_target(e);
+    if (g_wifi_keyboard) {
+        lv_keyboard_set_textarea(g_wifi_keyboard, ta);
+        lv_obj_clear_flag(g_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void on_wifi_ap_click(lv_event_t *e)
+{
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= g_wifi_scan_count) return;
+    strncpy(g_selected_ssid, g_wifi_scan_results[idx].ssid, sizeof(g_selected_ssid) - 1);
+    g_selected_ssid[sizeof(g_selected_ssid) - 1] = '\0';
+    if (g_wifi_ssid_ta) lv_textarea_set_text(g_wifi_ssid_ta, g_selected_ssid);
+    if (g_wifi_password_ta) lv_textarea_set_text(g_wifi_password_ta, "");
+    wifi_set_status("SSID selected");
+}
+
+static void on_wifi_connect(lv_event_t *e)
+{
+    (void)e;
+    const char *ssid = g_wifi_ssid_ta ? lv_textarea_get_text(g_wifi_ssid_ta) : "";
+    const char *pass = g_wifi_password_ta ? lv_textarea_get_text(g_wifi_password_ta) : "";
+    save_and_connect_wifi(ssid, pass);
 }
 
 static void on_focus_minus(lv_event_t *e)
@@ -700,6 +786,7 @@ static void show_settings_page(void)
     style_panel(panel, C_CARD_SOFT, LV_OPA_70, 24);
     make_label(panel, "Tap controls are large for the 4.3 inch touch panel.", &lv_font_montserrat_14,
                C_TEXT_DIM, 34, 22);
+    make_button(panel, "WiFi", 492, 14, 84, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_settings);
 
     g_settings_list = lv_obj_create(panel);
     lv_obj_set_size(g_settings_list, 520, 238);
@@ -722,6 +809,117 @@ static void show_settings_page(void)
     add_setting_row(g_settings_list, "Screen brightness", buf, 200, on_brightness_minus, on_brightness_plus);
 
     make_button(g_scr, "Back", 330, 424, 140, 40, C_HIGHLIGHT, C_CARD_DARK, on_main);
+}
+
+static void update_wifi_scan_list(void)
+{
+    if (!g_wifi_list) return;
+    lv_obj_clean(g_wifi_list);
+    g_wifi_scan_dirty = false;
+
+    if (g_wifi_scan_busy) {
+        make_label(g_wifi_list, "Scanning nearby WiFi...", &lv_font_montserrat_14, C_TEXT_DIM, 14, 14);
+        return;
+    }
+
+    if (g_wifi_scan_count <= 0) {
+        make_label(g_wifi_list, "No networks yet. Tap Scan.", &lv_font_montserrat_14, C_TEXT_DIM, 14, 14);
+        return;
+    }
+
+    for (int i = 0; i < g_wifi_scan_count; ++i) {
+        char row_text[64];
+        snprintf(row_text, sizeof(row_text), "%s  %ddBm  %s",
+                 g_wifi_scan_results[i].ssid,
+                 (int)g_wifi_scan_results[i].rssi,
+                 wifi_auth_name(g_wifi_scan_results[i].authmode));
+        lv_obj_t *row = lv_btn_create(g_wifi_list);
+        lv_obj_set_size(row, 322, 36);
+        lv_obj_set_pos(row, 0, i * 40);
+        lv_obj_set_style_bg_color(row, lv_color_hex(C_BUTTON_DARK), 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_50, 0);
+        lv_obj_set_style_radius(row, 18, 0);
+        lv_obj_set_style_shadow_width(row, 0, 0);
+        lv_obj_add_event_cb(row, on_wifi_ap_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+
+        lv_obj_t *label = lv_label_create(row);
+        lv_label_set_text(label, row_text);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(C_TEXT), 0);
+        lv_obj_set_width(label, 292);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+        lv_obj_center(label);
+        lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
+    }
+}
+
+static lv_obj_t *make_textarea(lv_obj_t *parent, const char *placeholder,
+                               lv_coord_t x, lv_coord_t y, bool password)
+{
+    lv_obj_t *ta = lv_textarea_create(parent);
+    lv_obj_set_size(ta, 300, 42);
+    lv_obj_set_pos(ta, x, y);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_placeholder_text(ta, placeholder);
+    lv_textarea_set_max_length(ta, password ? 64 : 32);
+    lv_textarea_set_password_mode(ta, password);
+    lv_obj_set_style_bg_color(ta, lv_color_hex(C_CARD_DARK), 0);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_70, 0);
+    lv_obj_set_style_border_color(ta, lv_color_hex(C_HIGHLIGHT_2), 0);
+    lv_obj_set_style_border_opa(ta, LV_OPA_30, 0);
+    lv_obj_set_style_border_width(ta, 1, 0);
+    lv_obj_set_style_radius(ta, 12, 0);
+    lv_obj_set_style_text_color(ta, lv_color_hex(C_TEXT), 0);
+    lv_obj_set_style_text_font(ta, &lv_font_montserrat_16, 0);
+    lv_obj_add_event_cb(ta, on_wifi_textarea_focus, LV_EVENT_FOCUSED, NULL);
+    lv_obj_add_event_cb(ta, on_wifi_textarea_focus, LV_EVENT_CLICKED, NULL);
+    return ta;
+}
+
+static void show_wifi_page(void)
+{
+    g_page = PAGE_WIFI;
+    lv_obj_clean(g_scr);
+    create_background(g_scr);
+    create_top_bar(g_scr);
+    lv_label_set_text(g_page_title, "WiFi Setup");
+
+    lv_obj_t *panel = lv_obj_create(g_scr);
+    lv_obj_set_size(panel, 732, 286);
+    lv_obj_set_pos(panel, 34, 92);
+    style_panel(panel, C_CARD_SOFT, LV_OPA_70, 24);
+
+    make_label(panel, "Nearby networks", &lv_font_montserrat_16, C_TEXT, 28, 20);
+    make_button(panel, "Scan", 250, 16, 82, 34, C_HIGHLIGHT, C_CARD_DARK, on_wifi_scan);
+
+    g_wifi_list = lv_obj_create(panel);
+    lv_obj_set_size(g_wifi_list, 332, 208);
+    lv_obj_set_pos(g_wifi_list, 24, 60);
+    lv_obj_set_style_bg_opa(g_wifi_list, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(g_wifi_list, 0, 0);
+    lv_obj_set_scroll_dir(g_wifi_list, LV_DIR_VER);
+
+    make_label(panel, "SSID", &lv_font_montserrat_14, C_TEXT_DIM, 386, 56);
+    g_wifi_ssid_ta = make_textarea(panel, "Select or type SSID", 386, 78, false);
+    lv_textarea_set_text(g_wifi_ssid_ta, has_text(g_wifi_ssid) ? g_wifi_ssid : "");
+
+    make_label(panel, "Password", &lv_font_montserrat_14, C_TEXT_DIM, 386, 132);
+    g_wifi_password_ta = make_textarea(panel, "Leave blank for open WiFi", 386, 154, true);
+
+    g_wifi_status_label = make_label(panel, has_text(g_wifi_ssid) ? "Saved network loaded" : "No saved WiFi",
+                                     &lv_font_montserrat_14, C_TEXT_DIM, 386, 212);
+    make_button(panel, "Connect", 386, 238, 132, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_connect);
+    make_button(panel, "Back", 538, 238, 118, 36, C_BUTTON_DARK, C_TEXT, on_settings);
+
+    g_wifi_keyboard = lv_keyboard_create(g_scr);
+    lv_obj_set_size(g_wifi_keyboard, 800, 176);
+    lv_obj_set_pos(g_wifi_keyboard, 0, 304);
+    lv_obj_set_style_bg_color(g_wifi_keyboard, lv_color_hex(C_CARD_DARK), 0);
+    lv_obj_set_style_bg_opa(g_wifi_keyboard, LV_OPA_COVER, 0);
+    lv_obj_add_flag(g_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+    update_wifi_scan_list();
+    if (g_wifi_scan_count == 0) start_wifi_scan();
 }
 
 static void show_done_page(void)
@@ -771,13 +969,21 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     (void)event_data;
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+        if (has_text(g_wifi_ssid)) {
+            esp_wifi_connect();
+        } else {
+            weather_set_local_status("WiFi setup needed");
+        }
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        xEventGroupClearBits(g_wifi_events, WIFI_CONNECTED_BIT);
-        esp_wifi_connect();
-        weather_set_local_status("WiFi reconnecting");
+        if (g_wifi_events) xEventGroupClearBits(g_wifi_events, WIFI_CONNECTED_BIT);
+        if (has_text(g_wifi_ssid)) {
+            esp_wifi_connect();
+            weather_set_local_status("WiFi reconnecting");
+        } else {
+            weather_set_local_status("WiFi setup needed");
+        }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        xEventGroupSetBits(g_wifi_events, WIFI_CONNECTED_BIT);
+        if (g_wifi_events) xEventGroupSetBits(g_wifi_events, WIFI_CONNECTED_BIT);
         weather_set_local_status("WiFi online");
     }
 }
@@ -793,14 +999,100 @@ static void start_sntp_once(void)
     g_sntp_started = true;
 }
 
-static void start_wifi_once(void)
+static void load_wifi_credentials_once(void)
 {
-    if (g_net_started) return;
+    static bool loaded;
+    if (loaded) return;
+    loaded = true;
 
-    if (!has_text(TOMATO_WIFI_SSID)) {
-        weather_set_local_status("Set TOMATO_WIFI_SSID");
+    strncpy(g_wifi_ssid, TOMATO_WIFI_SSID, sizeof(g_wifi_ssid) - 1);
+    g_wifi_ssid[sizeof(g_wifi_ssid) - 1] = '\0';
+    strncpy(g_wifi_pass, TOMATO_WIFI_PASS, sizeof(g_wifi_pass) - 1);
+    g_wifi_pass[sizeof(g_wifi_pass) - 1] = '\0';
+
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open("tomato_wifi", NVS_READONLY, &nvs);
+    if (err != ESP_OK) return;
+
+    size_t len = sizeof(g_wifi_ssid);
+    if (nvs_get_str(nvs, "ssid", g_wifi_ssid, &len) != ESP_OK) {
+        g_wifi_ssid[0] = '\0';
+    }
+    len = sizeof(g_wifi_pass);
+    if (nvs_get_str(nvs, "pass", g_wifi_pass, &len) != ESP_OK) {
+        g_wifi_pass[0] = '\0';
+    }
+    nvs_close(nvs);
+}
+
+static bool save_wifi_credentials(const char *ssid, const char *pass)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open("tomato_wifi", NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "nvs_open failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    err = nvs_set_str(nvs, "ssid", ssid);
+    if (err == ESP_OK) err = nvs_set_str(nvs, "pass", pass ? pass : "");
+    if (err == ESP_OK) err = nvs_commit(nvs);
+    nvs_close(nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "save wifi failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+static esp_err_t apply_wifi_config(void)
+{
+    if (!has_text(g_wifi_ssid)) return ESP_ERR_INVALID_ARG;
+
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, g_wifi_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, g_wifi_pass, sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode = has_text(g_wifi_pass) ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+
+    return esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+}
+
+static void save_and_connect_wifi(const char *ssid, const char *pass)
+{
+    if (!has_text(ssid)) {
+        wifi_set_status("SSID is empty");
         return;
     }
+
+    strncpy(g_wifi_ssid, ssid, sizeof(g_wifi_ssid) - 1);
+    g_wifi_ssid[sizeof(g_wifi_ssid) - 1] = '\0';
+    strncpy(g_wifi_pass, pass ? pass : "", sizeof(g_wifi_pass) - 1);
+    g_wifi_pass[sizeof(g_wifi_pass) - 1] = '\0';
+
+    if (!save_wifi_credentials(g_wifi_ssid, g_wifi_pass)) {
+        wifi_set_status("WiFi save failed");
+        return;
+    }
+
+    wifi_set_status("Saved. Connecting");
+    start_wifi_once();
+    if (g_net_started) {
+        if (g_wifi_events) xEventGroupClearBits(g_wifi_events, WIFI_CONNECTED_BIT);
+        esp_wifi_disconnect();
+        esp_err_t err = apply_wifi_config();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "apply wifi failed: %s", esp_err_to_name(err));
+            wifi_set_status("WiFi config failed");
+            return;
+        }
+        esp_wifi_connect();
+    }
+}
+
+static void start_wifi_once(void)
+{
+    load_wifi_credentials_once();
+    if (g_net_started) return;
 
     g_wifi_events = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_netif_init());
@@ -814,17 +1106,78 @@ static void start_wifi_once(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                                         &wifi_event_handler, NULL, NULL));
 
-    wifi_config_t wifi_config = {0};
-    strncpy((char *)wifi_config.sta.ssid, TOMATO_WIFI_SSID, sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char *)wifi_config.sta.password, TOMATO_WIFI_PASS, sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    if (!has_text(TOMATO_WIFI_PASS)) wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
-
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    if (has_text(g_wifi_ssid)) {
+        ESP_ERROR_CHECK(apply_wifi_config());
+    } else {
+        weather_set_local_status("WiFi setup needed");
+    }
     ESP_ERROR_CHECK(esp_wifi_start());
     start_sntp_once();
     g_net_started = true;
+}
+
+static void wifi_scan_task(void *arg)
+{
+    (void)arg;
+    start_wifi_once();
+    g_wifi_scan_busy = true;
+    g_wifi_scan_dirty = true;
+
+    wifi_scan_config_t scan_config = {
+        .show_hidden = true,
+    };
+    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi scan failed: %s", esp_err_to_name(err));
+        g_wifi_scan_count = 0;
+        g_wifi_scan_busy = false;
+        g_wifi_scan_dirty = true;
+        if (has_text(g_wifi_ssid)) esp_wifi_connect();
+        vTaskDelete(NULL);
+        return;
+    }
+
+    uint16_t count = 0;
+    esp_wifi_scan_get_ap_num(&count);
+    if (count > 16) count = 16;
+    wifi_ap_record_t records[16] = {0};
+    esp_wifi_scan_get_ap_records(&count, records);
+
+    for (uint16_t i = 0; i < count; ++i) {
+        for (uint16_t j = i + 1; j < count; ++j) {
+            if (records[j].rssi > records[i].rssi) {
+                wifi_ap_record_t tmp = records[i];
+                records[i] = records[j];
+                records[j] = tmp;
+            }
+        }
+    }
+
+    int copied = 0;
+    for (uint16_t i = 0; i < count && copied < (int)(sizeof(g_wifi_scan_results) / sizeof(g_wifi_scan_results[0])); ++i) {
+        if (records[i].ssid[0] == '\0') continue;
+        strncpy(g_wifi_scan_results[copied].ssid, (const char *)records[i].ssid,
+                sizeof(g_wifi_scan_results[copied].ssid) - 1);
+        g_wifi_scan_results[copied].ssid[sizeof(g_wifi_scan_results[copied].ssid) - 1] = '\0';
+        g_wifi_scan_results[copied].rssi = records[i].rssi;
+        g_wifi_scan_results[copied].authmode = records[i].authmode;
+        copied++;
+    }
+    g_wifi_scan_count = copied;
+    g_wifi_scan_busy = false;
+    g_wifi_scan_dirty = true;
+    if (has_text(g_wifi_ssid)) esp_wifi_connect();
+    vTaskDelete(NULL);
+}
+
+static void start_wifi_scan(void)
+{
+    if (g_wifi_scan_busy) return;
+    g_wifi_scan_busy = true;
+    g_wifi_scan_dirty = true;
+    wifi_set_status("Scanning WiFi");
+    xTaskCreate(wifi_scan_task, "tomato_wifi_scan", 4096, NULL, 4, NULL);
 }
 
 typedef struct {
@@ -1069,8 +1422,8 @@ static void weather_task(void *arg)
     start_wifi_once();
 
     while (true) {
-        if (!g_wifi_events || !has_text(TOMATO_WIFI_SSID)) {
-            weather_set_local_status("WiFi not configured");
+        if (!g_wifi_events || !has_text(g_wifi_ssid)) {
+            weather_set_local_status("WiFi setup needed");
             vTaskDelay(pdMS_TO_TICKS(60000));
             continue;
         }
@@ -1099,6 +1452,7 @@ static void start_weather_task_once(void)
 void tomato_timer_start(void)
 {
     if (!g_weather_mutex) g_weather_mutex = xSemaphoreCreateMutex();
+    load_wifi_credentials_once();
 
     g_scr = lv_obj_create(NULL);
     lv_scr_load(g_scr);
