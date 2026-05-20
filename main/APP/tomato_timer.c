@@ -756,19 +756,27 @@ static void show_main_page(void)
     update_timer_labels();
 }
 
-static void add_setting_row(lv_obj_t *parent, const char *name, const char *value, int y,
-                            lv_event_cb_t minus_cb, lv_event_cb_t plus_cb)
+static void add_setting_tile(lv_obj_t *parent, const char *name, const char *value,
+                             int col, int row_idx, lv_event_cb_t minus_cb, lv_event_cb_t plus_cb)
 {
-    lv_obj_t *row = lv_obj_create(parent);
-    lv_obj_set_size(row, 520, 38);
-    lv_obj_set_pos(row, 0, y);
-    style_panel(row, C_CARD_DARK, LV_OPA_40, 13);
-    make_label(row, name, &lv_font_montserrat_14, C_TEXT, 18, 10);
-    lv_obj_t *v = make_label(row, value, &lv_font_montserrat_14, C_TEXT_DIM, 250, 10);
-    lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_width(v, 120);
-    make_button(row, "-", 392, 4, 46, 30, C_BUTTON_DARK, C_TEXT, minus_cb);
-    make_button(row, "+", 450, 4, 46, 30, C_HIGHLIGHT, C_CARD_DARK, plus_cb);
+    const int tile_w = 218;
+    const int tile_h = 92;
+    const int gap = 14;
+    lv_obj_t *tile = lv_obj_create(parent);
+    lv_obj_set_size(tile, tile_w, tile_h);
+    lv_obj_set_pos(tile, col * (tile_w + gap), row_idx * (tile_h + 12));
+    style_panel(tile, C_CARD_DARK, LV_OPA_40, 16);
+
+    lv_obj_t *title = make_label(tile, name, &lv_font_montserrat_14, C_TEXT_DIM, 16, 12);
+    lv_obj_set_width(title, 180);
+    lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
+
+    lv_obj_t *v = make_label(tile, value, &lv_font_montserrat_20, C_TEXT, 16, 43);
+    lv_obj_set_width(v, 92);
+    lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
+
+    make_button(tile, "-", 120, 43, 38, 34, C_BUTTON_DARK, C_TEXT, minus_cb);
+    make_button(tile, "+", 166, 43, 38, 34, C_HIGHLIGHT, C_CARD_DARK, plus_cb);
 }
 
 static void show_settings_page(void)
@@ -781,32 +789,33 @@ static void show_settings_page(void)
     lv_label_set_text(g_page_title, "Settings");
 
     lv_obj_t *panel = lv_obj_create(g_scr);
-    lv_obj_set_size(panel, 620, 316);
-    lv_obj_set_pos(panel, 90, 96);
+    lv_obj_set_size(panel, 732, 316);
+    lv_obj_set_pos(panel, 34, 92);
     style_panel(panel, C_CARD_SOFT, LV_OPA_70, 24);
-    make_label(panel, "Tap controls are large for the 4.3 inch touch panel.", &lv_font_montserrat_14,
-               C_TEXT_DIM, 34, 22);
-    make_button(panel, "WiFi", 492, 14, 84, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_settings);
+    make_label(panel, "Pomodoro Settings", &lv_font_montserrat_20, C_TEXT, 28, 20);
+    make_label(panel, "Large touch controls, no crowded rows.", &lv_font_montserrat_14,
+               C_TEXT_DIM, 252, 24);
+    make_button(panel, "WiFi", 598, 16, 96, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_settings);
 
     g_settings_list = lv_obj_create(panel);
-    lv_obj_set_size(g_settings_list, 520, 238);
-    lv_obj_set_pos(g_settings_list, 50, 58);
+    lv_obj_set_size(g_settings_list, 682, 196);
+    lv_obj_set_pos(g_settings_list, 25, 72);
     lv_obj_set_style_bg_opa(g_settings_list, LV_OPA_0, 0);
     lv_obj_set_style_border_width(g_settings_list, 0, 0);
     lv_obj_clear_flag(g_settings_list, LV_OBJ_FLAG_SCROLLABLE);
 
     snprintf(buf, sizeof(buf), "%d min", g_focus_min);
-    add_setting_row(g_settings_list, "Focus duration", buf, 0, on_focus_minus, on_focus_plus);
+    add_setting_tile(g_settings_list, "Focus", buf, 0, 0, on_focus_minus, on_focus_plus);
     snprintf(buf, sizeof(buf), "%d min", g_short_break_min);
-    add_setting_row(g_settings_list, "Short break", buf, 40, on_break_minus, on_break_plus);
+    add_setting_tile(g_settings_list, "Short Break", buf, 1, 0, on_break_minus, on_break_plus);
     snprintf(buf, sizeof(buf), "%d min", g_long_break_min);
-    add_setting_row(g_settings_list, "Long break", buf, 80, on_long_break_minus, on_long_break_plus);
+    add_setting_tile(g_settings_list, "Long Break", buf, 2, 0, on_long_break_minus, on_long_break_plus);
     snprintf(buf, sizeof(buf), "%d rounds", g_rounds);
-    add_setting_row(g_settings_list, "Tomato rounds", buf, 120, on_round_minus, on_round_plus);
+    add_setting_tile(g_settings_list, "Rounds", buf, 0, 1, on_round_minus, on_round_plus);
     snprintf(buf, sizeof(buf), "%d min", g_weather_refresh_min);
-    add_setting_row(g_settings_list, "Weather refresh", buf, 160, on_weather_minus, on_weather_plus);
+    add_setting_tile(g_settings_list, "Weather", buf, 1, 1, on_weather_minus, on_weather_plus);
     snprintf(buf, sizeof(buf), "%d%%", g_brightness_pct);
-    add_setting_row(g_settings_list, "Screen brightness", buf, 200, on_brightness_minus, on_brightness_plus);
+    add_setting_tile(g_settings_list, "Brightness", buf, 2, 1, on_brightness_minus, on_brightness_plus);
 
     make_button(g_scr, "Back", 330, 424, 140, 40, C_HIGHLIGHT, C_CARD_DARK, on_main);
 }
@@ -834,8 +843,8 @@ static void update_wifi_scan_list(void)
                  (int)g_wifi_scan_results[i].rssi,
                  wifi_auth_name(g_wifi_scan_results[i].authmode));
         lv_obj_t *row = lv_btn_create(g_wifi_list);
-        lv_obj_set_size(row, 322, 36);
-        lv_obj_set_pos(row, 0, i * 40);
+        lv_obj_set_size(row, 300, 32);
+        lv_obj_set_pos(row, 0, i * 36);
         lv_obj_set_style_bg_color(row, lv_color_hex(C_BUTTON_DARK), 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_50, 0);
         lv_obj_set_style_radius(row, 18, 0);
@@ -846,7 +855,7 @@ static void update_wifi_scan_list(void)
         lv_label_set_text(label, row_text);
         lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(label, lv_color_hex(C_TEXT), 0);
-        lv_obj_set_width(label, 292);
+        lv_obj_set_width(label, 270);
         lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
         lv_obj_center(label);
         lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
@@ -857,7 +866,7 @@ static lv_obj_t *make_textarea(lv_obj_t *parent, const char *placeholder,
                                lv_coord_t x, lv_coord_t y, bool password)
 {
     lv_obj_t *ta = lv_textarea_create(parent);
-    lv_obj_set_size(ta, 300, 42);
+    lv_obj_set_size(ta, 300, 36);
     lv_obj_set_pos(ta, x, y);
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_placeholder_text(ta, placeholder);
@@ -885,31 +894,33 @@ static void show_wifi_page(void)
     lv_label_set_text(g_page_title, "WiFi Setup");
 
     lv_obj_t *panel = lv_obj_create(g_scr);
-    lv_obj_set_size(panel, 732, 286);
+    lv_obj_set_size(panel, 732, 204);
     lv_obj_set_pos(panel, 34, 92);
     style_panel(panel, C_CARD_SOFT, LV_OPA_70, 24);
 
     make_label(panel, "Nearby networks", &lv_font_montserrat_16, C_TEXT, 28, 20);
-    make_button(panel, "Scan", 250, 16, 82, 34, C_HIGHLIGHT, C_CARD_DARK, on_wifi_scan);
+    make_button(panel, "Scan", 242, 16, 82, 34, C_HIGHLIGHT, C_CARD_DARK, on_wifi_scan);
 
     g_wifi_list = lv_obj_create(panel);
-    lv_obj_set_size(g_wifi_list, 332, 208);
+    lv_obj_set_size(g_wifi_list, 312, 132);
     lv_obj_set_pos(g_wifi_list, 24, 60);
     lv_obj_set_style_bg_opa(g_wifi_list, LV_OPA_0, 0);
     lv_obj_set_style_border_width(g_wifi_list, 0, 0);
     lv_obj_set_scroll_dir(g_wifi_list, LV_DIR_VER);
 
-    make_label(panel, "SSID", &lv_font_montserrat_14, C_TEXT_DIM, 386, 56);
-    g_wifi_ssid_ta = make_textarea(panel, "Select or type SSID", 386, 78, false);
+    make_label(panel, "SSID", &lv_font_montserrat_14, C_TEXT_DIM, 382, 20);
+    g_wifi_ssid_ta = make_textarea(panel, "Select or type SSID", 382, 42, false);
     lv_textarea_set_text(g_wifi_ssid_ta, has_text(g_wifi_ssid) ? g_wifi_ssid : "");
 
-    make_label(panel, "Password", &lv_font_montserrat_14, C_TEXT_DIM, 386, 132);
-    g_wifi_password_ta = make_textarea(panel, "Leave blank for open WiFi", 386, 154, true);
+    make_label(panel, "Password", &lv_font_montserrat_14, C_TEXT_DIM, 382, 84);
+    g_wifi_password_ta = make_textarea(panel, "Leave blank for open WiFi", 382, 106, true);
 
     g_wifi_status_label = make_label(panel, has_text(g_wifi_ssid) ? "Saved network loaded" : "No saved WiFi",
-                                     &lv_font_montserrat_14, C_TEXT_DIM, 386, 212);
-    make_button(panel, "Connect", 386, 238, 132, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_connect);
-    make_button(panel, "Back", 538, 238, 118, 36, C_BUTTON_DARK, C_TEXT, on_settings);
+                                     &lv_font_montserrat_14, C_TEXT_DIM, 382, 146);
+    lv_obj_set_width(g_wifi_status_label, 292);
+    lv_label_set_long_mode(g_wifi_status_label, LV_LABEL_LONG_DOT);
+    make_button(panel, "Connect", 382, 168, 132, 34, C_HIGHLIGHT, C_CARD_DARK, on_wifi_connect);
+    make_button(panel, "Back", 534, 168, 118, 34, C_BUTTON_DARK, C_TEXT, on_settings);
 
     g_wifi_keyboard = lv_keyboard_create(g_scr);
     lv_obj_set_size(g_wifi_keyboard, 800, 176);
