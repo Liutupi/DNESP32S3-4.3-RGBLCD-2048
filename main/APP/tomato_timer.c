@@ -240,6 +240,29 @@ static void clear_wifi_page_refs(void)
     g_wifi_keyboard = NULL;
 }
 
+static void clear_page_refs(void)
+{
+    g_time_label = NULL;
+    g_date_label = NULL;
+    g_timer_arc = NULL;
+    g_mode_label = NULL;
+    g_countdown_label = NULL;
+    g_tomato_label = NULL;
+    g_weather_city_label = NULL;
+    g_weather_temp_label = NULL;
+    g_weather_detail_label = NULL;
+    g_weather_status_label = NULL;
+    g_rhythm_label = NULL;
+    for (int i = 0; i < DEFAULT_ROUNDS; ++i) {
+        g_round_dots[i] = NULL;
+    }
+    g_start_label = NULL;
+    g_pause_label = NULL;
+    g_page_title = NULL;
+    g_settings_list = NULL;
+    clear_wifi_page_refs();
+}
+
 static int current_duration_for_mode(timer_mode_t mode)
 {
     if (mode == MODE_SHORT_BREAK) return g_short_break_min * 60;
@@ -351,6 +374,10 @@ static void update_weather_labels(void)
 {
     weather_info_t copy;
     if (!g_weather_mutex) return;
+    if (g_page != PAGE_MAIN || !g_weather_city_label || !g_weather_temp_label ||
+        !g_weather_detail_label || !g_weather_status_label) {
+        return;
+    }
 
     if (xSemaphoreTake(g_weather_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         copy = g_weather;
@@ -435,7 +462,7 @@ static void tick_cb(lv_timer_t *timer)
     (void)timer;
 
     update_clock_labels();
-    if (g_weather_dirty) update_weather_labels();
+    if (g_page == PAGE_MAIN && g_weather_dirty) update_weather_labels();
     if (g_page == PAGE_WIFI && g_wifi_scan_dirty) update_wifi_scan_list();
 
     if (g_state == TIMER_RUNNING) {
@@ -752,7 +779,7 @@ static void show_main_page(void)
 {
     g_page = PAGE_MAIN;
     if (g_scr) lv_obj_clean(g_scr);
-    clear_wifi_page_refs();
+    clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     create_main_card(g_scr);
@@ -790,7 +817,7 @@ static void show_settings_page(void)
     char buf[32];
     g_page = PAGE_SETTINGS;
     lv_obj_clean(g_scr);
-    clear_wifi_page_refs();
+    clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     lv_label_set_text(g_page_title, "Settings");
@@ -896,7 +923,7 @@ static void show_wifi_page(void)
 {
     g_page = PAGE_WIFI;
     lv_obj_clean(g_scr);
-    clear_wifi_page_refs();
+    clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     lv_label_set_text(g_page_title, "WiFi Setup");
@@ -938,7 +965,7 @@ static void show_done_page(void)
 {
     g_page = PAGE_DONE;
     lv_obj_clean(g_scr);
-    clear_wifi_page_refs();
+    clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     lv_label_set_text(g_page_title, "Focus Complete");
