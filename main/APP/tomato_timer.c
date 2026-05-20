@@ -231,6 +231,15 @@ static void wifi_set_status(const char *status)
     weather_set_local_status(status);
 }
 
+static void clear_wifi_page_refs(void)
+{
+    g_wifi_status_label = NULL;
+    g_wifi_list = NULL;
+    g_wifi_ssid_ta = NULL;
+    g_wifi_password_ta = NULL;
+    g_wifi_keyboard = NULL;
+}
+
 static int current_duration_for_mode(timer_mode_t mode)
 {
     if (mode == MODE_SHORT_BREAK) return g_short_break_min * 60;
@@ -507,10 +516,16 @@ static void on_wifi_scan(lv_event_t *e)
 static void on_wifi_textarea_focus(lv_event_t *e)
 {
     lv_obj_t *ta = lv_event_get_target(e);
-    if (g_wifi_keyboard) {
-        lv_keyboard_set_textarea(g_wifi_keyboard, ta);
-        lv_obj_clear_flag(g_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+    if (!g_wifi_keyboard && g_scr) {
+        g_wifi_keyboard = lv_keyboard_create(g_scr);
+        lv_obj_set_size(g_wifi_keyboard, 800, 168);
+        lv_obj_set_pos(g_wifi_keyboard, 0, 312);
+        lv_obj_set_style_bg_color(g_wifi_keyboard, lv_color_hex(C_CARD_DARK), 0);
+        lv_obj_set_style_bg_opa(g_wifi_keyboard, LV_OPA_COVER, 0);
     }
+    if (!g_wifi_keyboard) return;
+    lv_keyboard_set_textarea(g_wifi_keyboard, ta);
+    lv_obj_clear_flag(g_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void on_wifi_ap_click(lv_event_t *e)
@@ -629,24 +644,6 @@ static void create_background(lv_obj_t *scr)
     lv_obj_set_style_bg_grad_color(scr, lv_color_hex(C_BG_GLOW), 0);
     lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_HOR, 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *glow = lv_obj_create(scr);
-    lv_obj_set_size(glow, 280, 210);
-    lv_obj_set_pos(glow, -72, 360);
-    lv_obj_set_style_radius(glow, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(glow, lv_color_hex(C_HIGHLIGHT), 0);
-    lv_obj_set_style_bg_opa(glow, LV_OPA_10, 0);
-    lv_obj_set_style_border_width(glow, 0, 0);
-    lv_obj_clear_flag(glow, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *sun = lv_obj_create(scr);
-    lv_obj_set_size(sun, 190, 190);
-    lv_obj_set_pos(sun, 675, -75);
-    lv_obj_set_style_radius(sun, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(sun, lv_color_hex(0xFFC36D), 0);
-    lv_obj_set_style_bg_opa(sun, LV_OPA_20, 0);
-    lv_obj_set_style_border_width(sun, 0, 0);
-    lv_obj_clear_flag(sun, LV_OBJ_FLAG_SCROLLABLE);
 }
 
 static void create_top_bar(lv_obj_t *scr)
@@ -700,24 +697,32 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_width(g_tomato_label, 135);
 
     lv_obj_t *weather_card = lv_obj_create(card);
-    lv_obj_set_size(weather_card, 300, 108);
+    lv_obj_set_size(weather_card, 300, 132);
     lv_obj_set_pos(weather_card, 386, 34);
     style_panel(weather_card, C_CARD_DARK, LV_OPA_50, 22);
-    g_weather_city_label = make_label(weather_card, "Zhongshan Nanlang", &lv_font_montserrat_16, C_TEXT, 26, 20);
-    g_weather_temp_label = make_label(weather_card, "26 deg", &lv_font_montserrat_28, 0xFFFFFF, 26, 52);
-    g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", &lv_font_montserrat_16, C_TEXT_DIM, 112, 61);
-    g_weather_status_label = make_label(weather_card, "Local sample", &lv_font_montserrat_12, C_MUTED, 26, 84);
+    g_weather_city_label = make_label(weather_card, "Zhongshan Nanlang", &lv_font_montserrat_16, C_TEXT, 24, 18);
+    lv_obj_set_width(g_weather_city_label, 250);
+    lv_label_set_long_mode(g_weather_city_label, LV_LABEL_LONG_DOT);
+    g_weather_temp_label = make_label(weather_card, "26 deg", &lv_font_montserrat_28, 0xFFFFFF, 24, 48);
+    g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", &lv_font_montserrat_16, C_TEXT_DIM, 24, 86);
+    lv_obj_set_width(g_weather_detail_label, 250);
+    lv_label_set_long_mode(g_weather_detail_label, LV_LABEL_LONG_DOT);
+    g_weather_status_label = make_label(weather_card, "Local sample", &lv_font_montserrat_12, C_MUTED, 24, 112);
+    lv_obj_set_width(g_weather_status_label, 250);
+    lv_label_set_long_mode(g_weather_status_label, LV_LABEL_LONG_DOT);
 
     lv_obj_t *rhythm_card = lv_obj_create(card);
-    lv_obj_set_size(rhythm_card, 300, 96);
-    lv_obj_set_pos(rhythm_card, 386, 160);
+    lv_obj_set_size(rhythm_card, 300, 78);
+    lv_obj_set_pos(rhythm_card, 386, 184);
     style_panel(rhythm_card, C_CARD_DARK, LV_OPA_40, 22);
-    make_label(rhythm_card, "Today Rhythm", &lv_font_montserrat_16, C_TEXT, 26, 18);
-    g_rhythm_label = make_label(rhythm_card, "25 min focus + 5 min break", &lv_font_montserrat_14, C_TEXT_DIM, 26, 62);
+    make_label(rhythm_card, "Today Rhythm", &lv_font_montserrat_16, C_TEXT, 24, 12);
+    g_rhythm_label = make_label(rhythm_card, "25 min focus + 5 min break", &lv_font_montserrat_14, C_TEXT_DIM, 24, 48);
+    lv_obj_set_width(g_rhythm_label, 250);
+    lv_label_set_long_mode(g_rhythm_label, LV_LABEL_LONG_DOT);
 
     lv_obj_t *bar_bg = lv_obj_create(rhythm_card);
-    lv_obj_set_size(bar_bg, 210, 10);
-    lv_obj_set_pos(bar_bg, 26, 45);
+    lv_obj_set_size(bar_bg, 210, 8);
+    lv_obj_set_pos(bar_bg, 24, 36);
     lv_obj_set_style_radius(bar_bg, 5, 0);
     lv_obj_set_style_bg_color(bar_bg, lv_color_hex(0x4B1D12), 0);
     lv_obj_set_style_border_width(bar_bg, 0, 0);
@@ -725,8 +730,8 @@ static void create_main_card(lv_obj_t *scr)
 
     for (int i = 0; i < DEFAULT_ROUNDS; ++i) {
         g_round_dots[i] = lv_obj_create(rhythm_card);
-        lv_obj_set_size(g_round_dots[i], 16, 16);
-        lv_obj_set_pos(g_round_dots[i], 28 + i * 54, 42);
+        lv_obj_set_size(g_round_dots[i], 14, 14);
+        lv_obj_set_pos(g_round_dots[i], 26 + i * 54, 33);
         lv_obj_set_style_radius(g_round_dots[i], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(g_round_dots[i], 0, 0);
         lv_obj_clear_flag(g_round_dots[i], LV_OBJ_FLAG_SCROLLABLE);
@@ -747,6 +752,7 @@ static void show_main_page(void)
 {
     g_page = PAGE_MAIN;
     if (g_scr) lv_obj_clean(g_scr);
+    clear_wifi_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     create_main_card(g_scr);
@@ -759,24 +765,24 @@ static void show_main_page(void)
 static void add_setting_tile(lv_obj_t *parent, const char *name, const char *value,
                              int col, int row_idx, lv_event_cb_t minus_cb, lv_event_cb_t plus_cb)
 {
-    const int tile_w = 218;
-    const int tile_h = 92;
-    const int gap = 14;
+    const int tile_w = 322;
+    const int tile_h = 62;
+    const int gap = 24;
     lv_obj_t *tile = lv_obj_create(parent);
     lv_obj_set_size(tile, tile_w, tile_h);
-    lv_obj_set_pos(tile, col * (tile_w + gap), row_idx * (tile_h + 12));
+    lv_obj_set_pos(tile, col * (tile_w + gap), row_idx * (tile_h + 14));
     style_panel(tile, C_CARD_DARK, LV_OPA_40, 16);
 
-    lv_obj_t *title = make_label(tile, name, &lv_font_montserrat_14, C_TEXT_DIM, 16, 12);
-    lv_obj_set_width(title, 180);
+    lv_obj_t *title = make_label(tile, name, &lv_font_montserrat_14, C_TEXT_DIM, 18, 10);
+    lv_obj_set_width(title, 150);
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
 
-    lv_obj_t *v = make_label(tile, value, &lv_font_montserrat_20, C_TEXT, 16, 43);
-    lv_obj_set_width(v, 92);
+    lv_obj_t *v = make_label(tile, value, &lv_font_montserrat_20, C_TEXT, 154, 20);
+    lv_obj_set_width(v, 78);
     lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
 
-    make_button(tile, "-", 120, 43, 38, 34, C_BUTTON_DARK, C_TEXT, minus_cb);
-    make_button(tile, "+", 166, 43, 38, 34, C_HIGHLIGHT, C_CARD_DARK, plus_cb);
+    make_button(tile, "-", 232, 14, 36, 34, C_BUTTON_DARK, C_TEXT, minus_cb);
+    make_button(tile, "+", 274, 14, 36, 34, C_HIGHLIGHT, C_CARD_DARK, plus_cb);
 }
 
 static void show_settings_page(void)
@@ -784,6 +790,7 @@ static void show_settings_page(void)
     char buf[32];
     g_page = PAGE_SETTINGS;
     lv_obj_clean(g_scr);
+    clear_wifi_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     lv_label_set_text(g_page_title, "Settings");
@@ -798,7 +805,7 @@ static void show_settings_page(void)
     make_button(panel, "WiFi", 598, 16, 96, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_settings);
 
     g_settings_list = lv_obj_create(panel);
-    lv_obj_set_size(g_settings_list, 682, 196);
+    lv_obj_set_size(g_settings_list, 682, 228);
     lv_obj_set_pos(g_settings_list, 25, 72);
     lv_obj_set_style_bg_opa(g_settings_list, LV_OPA_0, 0);
     lv_obj_set_style_border_width(g_settings_list, 0, 0);
@@ -809,13 +816,13 @@ static void show_settings_page(void)
     snprintf(buf, sizeof(buf), "%d min", g_short_break_min);
     add_setting_tile(g_settings_list, "Short Break", buf, 1, 0, on_break_minus, on_break_plus);
     snprintf(buf, sizeof(buf), "%d min", g_long_break_min);
-    add_setting_tile(g_settings_list, "Long Break", buf, 2, 0, on_long_break_minus, on_long_break_plus);
+    add_setting_tile(g_settings_list, "Long Break", buf, 0, 1, on_long_break_minus, on_long_break_plus);
     snprintf(buf, sizeof(buf), "%d rounds", g_rounds);
-    add_setting_tile(g_settings_list, "Rounds", buf, 0, 1, on_round_minus, on_round_plus);
+    add_setting_tile(g_settings_list, "Rounds", buf, 1, 1, on_round_minus, on_round_plus);
     snprintf(buf, sizeof(buf), "%d min", g_weather_refresh_min);
-    add_setting_tile(g_settings_list, "Weather", buf, 1, 1, on_weather_minus, on_weather_plus);
+    add_setting_tile(g_settings_list, "Weather", buf, 0, 2, on_weather_minus, on_weather_plus);
     snprintf(buf, sizeof(buf), "%d%%", g_brightness_pct);
-    add_setting_tile(g_settings_list, "Brightness", buf, 2, 1, on_brightness_minus, on_brightness_plus);
+    add_setting_tile(g_settings_list, "Brightness", buf, 1, 2, on_brightness_minus, on_brightness_plus);
 
     make_button(g_scr, "Back", 330, 424, 140, 40, C_HIGHLIGHT, C_CARD_DARK, on_main);
 }
@@ -889,6 +896,7 @@ static void show_wifi_page(void)
 {
     g_page = PAGE_WIFI;
     lv_obj_clean(g_scr);
+    clear_wifi_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     lv_label_set_text(g_page_title, "WiFi Setup");
@@ -922,13 +930,6 @@ static void show_wifi_page(void)
     make_button(panel, "Connect", 382, 168, 132, 34, C_HIGHLIGHT, C_CARD_DARK, on_wifi_connect);
     make_button(panel, "Back", 534, 168, 118, 34, C_BUTTON_DARK, C_TEXT, on_settings);
 
-    g_wifi_keyboard = lv_keyboard_create(g_scr);
-    lv_obj_set_size(g_wifi_keyboard, 800, 176);
-    lv_obj_set_pos(g_wifi_keyboard, 0, 304);
-    lv_obj_set_style_bg_color(g_wifi_keyboard, lv_color_hex(C_CARD_DARK), 0);
-    lv_obj_set_style_bg_opa(g_wifi_keyboard, LV_OPA_COVER, 0);
-    lv_obj_add_flag(g_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
-
     update_wifi_scan_list();
     if (g_wifi_scan_count == 0) start_wifi_scan();
 }
@@ -937,6 +938,7 @@ static void show_done_page(void)
 {
     g_page = PAGE_DONE;
     lv_obj_clean(g_scr);
+    clear_wifi_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
     lv_label_set_text(g_page_title, "Focus Complete");
