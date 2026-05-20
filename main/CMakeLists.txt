@@ -11,7 +11,10 @@ idf_component_register(
         esp_event
         esp_netif
         esp_http_client
+        esp_http_server
         esp-tls
         mbedtls
         nvs_flash
-        json)
+        json
+        lwip)
+

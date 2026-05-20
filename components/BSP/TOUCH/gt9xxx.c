@@ -253,6 +253,7 @@ uint8_t gt9xxx_scan(uint8_t mode)
                         tp_dev.x[i] = lcddev.width - (((uint16_t)buf[3] << 8) + buf[2]);
                         tp_dev.y[i] = ((uint16_t)buf[1] << 8) + buf[0];
                     }
+
                 }
             }
 

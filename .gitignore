@@ -8,3 +8,7 @@ dependencies.lock
 main/APP/qweather_jwt_secret.h
 qweather-ed25519-private.pem
 qweather-ed25519-public.pem
+
+my_serial_log.txt
+read_serial*.py
+*.log
