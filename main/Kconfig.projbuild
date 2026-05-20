@@ -1,0 +1,28 @@
+menu "Tomato Glow Clock"
+
+config TOMATO_WIFI_SSID
+    string "WiFi SSID"
+    default ""
+    help
+        WiFi network name used by Tomato Glow Clock for time sync and weather.
+
+config TOMATO_WIFI_PASS
+    string "WiFi password"
+    default ""
+    help
+        WiFi password. Leave empty for an open network.
+
+config TOMATO_QWEATHER_API_KEY
+    string "Legacy QWeather API key"
+    default ""
+    help
+        Kept only for old API key credentials. Tomato Glow Clock now uses local JWT
+        signing when main/APP/qweather_jwt_secret.h is present.
+
+config TOMATO_QWEATHER_LOCATION
+    string "QWeather location"
+    default "113.53,22.49"
+    help
+        QWeather location ID or longitude,latitude. Default is Zhongshan Nanlang.
+
+endmenu

@@ -5,3 +5,6 @@ sdkconfig.old
 dependencies.lock
 .vscode/
 .idea/
+main/APP/qweather_jwt_secret.h
+qweather-ed25519-private.pem
+qweather-ed25519-public.pem

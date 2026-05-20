@@ -10,6 +10,7 @@
 #include "reaction_test.h"
 #include "bird_launcher.h"
 #include "photoviewer.h"
+#include "tomato_timer.h"
 #include <stdio.h>
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -20,11 +21,12 @@ extern lv_obj_t * debug_label;
 
 #define CARD_X      200
 #define CARD_W      400
-#define CARD1_Y      95
-#define CARD2_Y     190
-#define CARD3_Y     285
-#define CARD4_Y     375
-#define CARD_H       85
+#define CARD1_Y      82
+#define CARD2_Y     157
+#define CARD3_Y     232
+#define CARD4_Y     307
+#define CARD5_Y     382
+#define CARD_H       65
 
 static int hit_test(lv_coord_t x, lv_coord_t y)
 {
@@ -33,6 +35,7 @@ static int hit_test(lv_coord_t x, lv_coord_t y)
         if (y >= CARD2_Y && y <= CARD2_Y + CARD_H) return 2;
         if (y >= CARD3_Y && y <= CARD3_Y + CARD_H) return 3;
         if (y >= CARD4_Y && y <= CARD4_Y + CARD_H) return 4;
+        if (y >= CARD5_Y && y <= CARD5_Y + CARD_H) return 5;
     }
     return 0;
 }
@@ -62,6 +65,8 @@ static void touch_cb(lv_event_t *e)
             bird_launcher_start();
         } else if (card == 4) {
             photoviewer_start();
+        } else if (card == 5) {
+            tomato_timer_start();
         }
     }
 }
@@ -86,7 +91,7 @@ void menu_start(void)
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *hl = lv_label_create(header);
-    lv_label_set_text(hl, LV_SYMBOL_PLAY "  Game  &  Photo Center");
+    lv_label_set_text(hl, LV_SYMBOL_PLAY "  Focus  &  Game Center");
     lv_obj_set_style_text_font(hl, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(hl, lv_color_hex(0xECF0F1), 0);
     lv_obj_center(hl);
@@ -177,7 +182,29 @@ void menu_start(void)
     lv_label_set_text(c4s, "Auto slideshow from SD card (/PHOTOS/)");
     lv_obj_set_style_text_font(c4s, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(c4s, lv_color_hex(0xA9DFBF), 0);
-    lv_obj_set_pos(c4s, 20, 52);
+    lv_obj_set_pos(c4s, 20, 42);
+
+    /* Card 5: Tomato Glow Clock */
+    lv_obj_t *c5 = lv_obj_create(scr);
+    lv_obj_set_size(c5, CARD_W, CARD_H);
+    lv_obj_set_pos(c5, CARD_X, CARD5_Y);
+    lv_obj_set_style_bg_color(c5, lv_color_hex(0xB85B2A), 0);
+    lv_obj_set_style_radius(c5, 12, 0);
+    lv_obj_set_style_border_width(c5, 0, 0);
+    lv_obj_set_style_pad_all(c5, 0, 0);
+    lv_obj_clear_flag(c5, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *c5t = lv_label_create(c5);
+    lv_label_set_text(c5t, LV_SYMBOL_HOME "  Tomato Glow Clock");
+    lv_obj_set_style_text_font(c5t, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(c5t, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_pos(c5t, 20, 8);
+
+    lv_obj_t *c5s = lv_label_create(c5);
+    lv_label_set_text(c5s, "Warm desk focus clock with weather");
+    lv_obj_set_style_text_font(c5s, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(c5s, lv_color_hex(0xF5B7B1), 0);
+    lv_obj_set_pos(c5s, 20, 38);
 
     /* Transparent touch layer on top */
     lv_obj_t *touch = lv_obj_create(scr);

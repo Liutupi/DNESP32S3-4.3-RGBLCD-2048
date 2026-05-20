@@ -4,4 +4,14 @@ idf_component_register(
         "APP"
     INCLUDE_DIRS 
         "."
-        "APP")
+        "APP"
+    REQUIRES
+        BSP
+        esp_wifi
+        esp_event
+        esp_netif
+        esp_http_client
+        esp-tls
+        mbedtls
+        nvs_flash
+        json)
