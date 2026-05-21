@@ -118,6 +118,15 @@ typedef enum {
     PAGE_WIFI
 } page_t;
 
+typedef enum {
+    WX_ANIM_CLOUDY,
+    WX_ANIM_SUNNY,
+    WX_ANIM_RAINY,
+    WX_ANIM_SNOWY,
+    WX_ANIM_STORMY,
+    WX_ANIM_FOGGY
+} weather_anim_t;
+
 typedef struct {
     char ssid[33];
     int8_t rssi;
@@ -149,6 +158,8 @@ static lv_obj_t *g_weather_city_label;
 static lv_obj_t *g_weather_temp_label;
 static lv_obj_t *g_weather_detail_label;
 static lv_obj_t *g_weather_status_label;
+static lv_obj_t *g_weather_scene;
+static lv_obj_t *g_weather_motes[8];
 static lv_obj_t *g_rhythm_label;
 static lv_obj_t *g_round_dots[DEFAULT_ROUNDS];
 static lv_obj_t *g_start_label;
@@ -190,6 +201,7 @@ static bool g_weather_task_started;
 static volatile bool g_weather_dirty;
 static volatile bool g_wifi_scan_dirty;
 static volatile bool g_wifi_scan_busy;
+static weather_anim_t g_weather_anim_kind = WX_ANIM_CLOUDY;
 static bool g_wifi_connecting_manually;
 static char g_wifi_ssid[33];
 static char g_wifi_pass[65];
@@ -233,6 +245,8 @@ static void stop_captive_portal(void);
 static void portal_shutdown_task(void *arg);
 static esp_err_t apply_wifi_config(void);
 static void on_settings(lv_event_t *e);
+static lv_obj_t *make_label(lv_obj_t *parent, const char *text, const lv_font_t *font,
+                            uint32_t color, lv_coord_t x, lv_coord_t y);
 
 static bool has_text(const char *s)
 {
@@ -282,6 +296,10 @@ static void clear_page_refs(void)
     g_weather_temp_label = NULL;
     g_weather_detail_label = NULL;
     g_weather_status_label = NULL;
+    g_weather_scene = NULL;
+    for (int i = 0; i < 8; ++i) {
+        g_weather_motes[i] = NULL;
+    }
     g_rhythm_label = NULL;
     for (int i = 0; i < DEFAULT_ROUNDS; ++i) {
         g_round_dots[i] = NULL;
@@ -332,6 +350,147 @@ static void style_panel(lv_obj_t *obj, uint32_t color, lv_opa_t opa, lv_coord_t 
     lv_obj_set_style_shadow_opa(obj, LV_OPA_20, 0);
     lv_obj_set_style_shadow_color(obj, lv_color_hex(0x120503), 0);
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static void anim_x_cb(void *obj, int32_t v)
+{
+    if (obj) lv_obj_set_x((lv_obj_t *)obj, v);
+}
+
+static void anim_y_cb(void *obj, int32_t v)
+{
+    if (obj) lv_obj_set_y((lv_obj_t *)obj, v);
+}
+
+static void anim_opa_cb(void *obj, int32_t v)
+{
+    if (obj) lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
+}
+
+static weather_anim_t weather_kind_from_text(const char *text)
+{
+    if (!text) return WX_ANIM_CLOUDY;
+    if (strstr(text, "Sunny")) return WX_ANIM_SUNNY;
+    if (strstr(text, "Rain")) return WX_ANIM_RAINY;
+    if (strstr(text, "Snow")) return WX_ANIM_SNOWY;
+    if (strstr(text, "Storm")) return WX_ANIM_STORMY;
+    if (strstr(text, "Fog")) return WX_ANIM_FOGGY;
+    return WX_ANIM_CLOUDY;
+}
+
+static lv_obj_t *create_disc(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
+                             lv_coord_t size, uint32_t color, lv_opa_t opa)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, size, size);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_style_radius(o, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(o, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(o, opa, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_shadow_width(o, 0, 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    return o;
+}
+
+static lv_obj_t *create_mote(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
+                             lv_coord_t w, lv_coord_t h, uint32_t color)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_style_radius(o, h / 2, 0);
+    lv_obj_set_style_bg_color(o, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_shadow_width(o, 0, 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    return o;
+}
+
+static void start_loop_anim(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
+                            int32_t from, int32_t to, uint32_t time_ms,
+                            uint32_t delay_ms)
+{
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, obj);
+    lv_anim_set_exec_cb(&a, cb);
+    lv_anim_set_values(&a, from, to);
+    lv_anim_set_time(&a, time_ms);
+    lv_anim_set_delay(&a, delay_ms);
+    lv_anim_set_playback_time(&a, time_ms);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
+}
+
+static void add_cloud_shape(lv_obj_t *parent)
+{
+    create_disc(parent, 30, 48, 44, 0xFFFFFF, LV_OPA_70);
+    create_disc(parent, 58, 34, 58, 0xFFFFFF, LV_OPA_80);
+    create_disc(parent, 98, 50, 38, 0xFFFFFF, LV_OPA_70);
+    create_mote(parent, 38, 72, 88, 22, 0xFFFFFF);
+}
+
+static void rebuild_weather_animation(weather_anim_t kind)
+{
+    if (!g_weather_scene) return;
+    lv_obj_clean(g_weather_scene);
+    memset(g_weather_motes, 0, sizeof(g_weather_motes));
+    g_weather_anim_kind = kind;
+
+    if (kind == WX_ANIM_SUNNY) {
+        lv_obj_t *sun = create_disc(g_weather_scene, 46, 30, 76, C_HIGHLIGHT, LV_OPA_COVER);
+        start_loop_anim(sun, anim_opa_cb, LV_OPA_70, LV_OPA_COVER, 1100, 0);
+        for (int i = 0; i < 8; ++i) {
+            int x = 82 + (i % 4) * 18 - (i / 4) * 72;
+            int y = (i < 4) ? 18 : 106;
+            g_weather_motes[i] = create_mote(g_weather_scene, x, y, 26, 4, C_HIGHLIGHT_2);
+            start_loop_anim(g_weather_motes[i], anim_opa_cb, LV_OPA_40, LV_OPA_90, 1200, i * 120);
+        }
+        return;
+    }
+
+    add_cloud_shape(g_weather_scene);
+
+    if (kind == WX_ANIM_RAINY || kind == WX_ANIM_STORMY) {
+        for (int i = 0; i < 6; ++i) {
+            g_weather_motes[i] = create_mote(g_weather_scene, 38 + i * 17, 88, 5, 20, 0x8AD9FF);
+            start_loop_anim(g_weather_motes[i], anim_y_cb, 88, 118, 650, i * 120);
+            start_loop_anim(g_weather_motes[i], anim_opa_cb, LV_OPA_30, LV_OPA_COVER, 650, i * 120);
+        }
+        if (kind == WX_ANIM_STORMY) {
+            lv_obj_t *bolt = make_label(g_weather_scene, "Z", &lv_font_montserrat_28, C_HIGHLIGHT, 76, 82);
+            start_loop_anim(bolt, anim_opa_cb, LV_OPA_0, LV_OPA_COVER, 360, 0);
+        }
+        return;
+    }
+
+    if (kind == WX_ANIM_SNOWY) {
+        for (int i = 0; i < 6; ++i) {
+            g_weather_motes[i] = create_disc(g_weather_scene, 42 + i * 16, 90, 8, 0xFFFFFF, LV_OPA_90);
+            start_loop_anim(g_weather_motes[i], anim_y_cb, 88, 120, 1200, i * 140);
+            start_loop_anim(g_weather_motes[i], anim_x_cb, 42 + i * 16, 48 + i * 16, 1200, i * 140);
+        }
+        return;
+    }
+
+    if (kind == WX_ANIM_FOGGY) {
+        for (int i = 0; i < 4; ++i) {
+            g_weather_motes[i] = create_mote(g_weather_scene, 24, 88 + i * 10, 110, 5, 0xFFEBC9);
+            start_loop_anim(g_weather_motes[i], anim_x_cb, 22, 42, 1700, i * 180);
+            start_loop_anim(g_weather_motes[i], anim_opa_cb, LV_OPA_40, LV_OPA_80, 1700, i * 180);
+        }
+        return;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        g_weather_motes[i] = create_disc(g_weather_scene, 26 + i * 40, 92, 9, 0xFFFFFF, LV_OPA_50);
+        start_loop_anim(g_weather_motes[i], anim_y_cb, 90, 98, 1300, i * 180);
+    }
 }
 
 static lv_obj_t *make_label(lv_obj_t *parent, const char *text, const lv_font_t *font,
@@ -425,6 +584,11 @@ static void update_weather_labels(void)
     set_label(g_weather_temp_label, temp_buf);
     set_label(g_weather_detail_label, detail_buf);
     set_label(g_weather_status_label, copy.status);
+
+    weather_anim_t next_kind = weather_kind_from_text(copy.text);
+    if (g_weather_scene && next_kind != g_weather_anim_kind) {
+        rebuild_weather_animation(next_kind);
+    }
 }
 
 static void update_round_dots(void)
@@ -761,14 +925,14 @@ static void create_top_bar(lv_obj_t *scr)
 static void create_main_card(lv_obj_t *scr)
 {
     lv_obj_t *card = lv_obj_create(scr);
-    lv_obj_set_size(card, 732, 316);
-    lv_obj_set_pos(card, 34, 92);
+    lv_obj_set_size(card, 732, 306);
+    lv_obj_set_pos(card, 34, 98);
     style_panel(card, C_CARD_SOFT, LV_OPA_70, 28);
     lv_obj_set_style_pad_all(card, 0, 0);
 
     lv_obj_t *circle_bg = lv_obj_create(card);
-    lv_obj_set_size(circle_bg, 248, 248);
-    lv_obj_set_pos(circle_bg, 86, 34);
+    lv_obj_set_size(circle_bg, 254, 254);
+    lv_obj_set_pos(circle_bg, 66, 26);
     lv_obj_set_style_radius(circle_bg, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(circle_bg, lv_color_hex(C_CARD_DARK), 0);
     lv_obj_set_style_bg_opa(circle_bg, LV_OPA_70, 0);
@@ -776,8 +940,8 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_clear_flag(circle_bg, LV_OBJ_FLAG_SCROLLABLE);
 
     g_timer_arc = lv_arc_create(card);
-    lv_obj_set_size(g_timer_arc, 238, 238);
-    lv_obj_set_pos(g_timer_arc, 91, 39);
+    lv_obj_set_size(g_timer_arc, 244, 244);
+    lv_obj_set_pos(g_timer_arc, 71, 31);
     lv_arc_set_range(g_timer_arc, 0, 1000);
     lv_arc_set_value(g_timer_arc, 1000);
     lv_arc_set_bg_angles(g_timer_arc, 120, 60);
@@ -788,47 +952,57 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_remove_style(g_timer_arc, NULL, LV_PART_KNOB);
     lv_obj_clear_flag(g_timer_arc, LV_OBJ_FLAG_CLICKABLE);
 
-    g_mode_label = make_label(card, "Focus Mode", &lv_font_montserrat_20, C_TEXT, 120, 118);
+    g_mode_label = make_label(card, "Focus Mode", &lv_font_montserrat_20, C_TEXT, 103, 110);
     lv_obj_set_style_text_align(g_mode_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_mode_label, 180);
 
-    g_countdown_label = make_label(card, "25:00", &lv_font_montserrat_48, 0xFFFFFF, 110, 148);
+    g_countdown_label = make_label(card, "25:00", &lv_font_montserrat_48, 0xFFFFFF, 92, 142);
     lv_obj_set_style_text_align(g_countdown_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_countdown_label, 200);
 
-    g_tomato_label = make_label(card, "Tomato 1 / 4", &lv_font_montserrat_14, C_TEXT_DIM, 120, 210);
+    g_tomato_label = make_label(card, "Tomato 1 / 4", &lv_font_montserrat_14, C_TEXT_DIM, 104, 204);
     lv_obj_set_style_text_align(g_tomato_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_tomato_label, 180);
 
     lv_obj_t *weather_card = lv_obj_create(card);
-    lv_obj_set_size(weather_card, 300, 132);
-    lv_obj_set_pos(weather_card, 386, 34);
+    lv_obj_set_size(weather_card, 336, 184);
+    lv_obj_set_pos(weather_card, 366, 26);
     style_panel(weather_card, C_CARD_DARK, LV_OPA_50, 22);
     lv_obj_set_style_pad_all(weather_card, 0, 0);
-    g_weather_city_label = make_label(weather_card, "Zhongshan Nanlang", &lv_font_montserrat_16, C_TEXT, 24, 18);
-    lv_obj_set_width(g_weather_city_label, 250);
+    g_weather_city_label = make_label(weather_card, "Zhongshan Nanlang", &lv_font_montserrat_16, C_TEXT, 22, 20);
+    lv_obj_set_width(g_weather_city_label, 154);
     lv_label_set_long_mode(g_weather_city_label, LV_LABEL_LONG_DOT);
-    g_weather_temp_label = make_label(weather_card, "26 deg", &lv_font_montserrat_28, 0xFFFFFF, 24, 48);
-    g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", &lv_font_montserrat_16, C_TEXT_DIM, 24, 86);
-    lv_obj_set_width(g_weather_detail_label, 250);
+    g_weather_temp_label = make_label(weather_card, "26 deg", &lv_font_montserrat_28, 0xFFFFFF, 22, 54);
+    g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", &lv_font_montserrat_16, C_TEXT_DIM, 22, 96);
+    lv_obj_set_width(g_weather_detail_label, 150);
     lv_label_set_long_mode(g_weather_detail_label, LV_LABEL_LONG_DOT);
-    g_weather_status_label = make_label(weather_card, "Local sample", &lv_font_montserrat_12, C_MUTED, 24, 112);
-    lv_obj_set_width(g_weather_status_label, 250);
+    g_weather_status_label = make_label(weather_card, "Local sample", &lv_font_montserrat_12, C_MUTED, 22, 136);
+    lv_obj_set_width(g_weather_status_label, 150);
     lv_label_set_long_mode(g_weather_status_label, LV_LABEL_LONG_DOT);
 
+    g_weather_scene = lv_obj_create(weather_card);
+    lv_obj_set_size(g_weather_scene, 150, 136);
+    lv_obj_set_pos(g_weather_scene, 176, 22);
+    lv_obj_set_style_bg_opa(g_weather_scene, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(g_weather_scene, 0, 0);
+    lv_obj_set_style_shadow_width(g_weather_scene, 0, 0);
+    lv_obj_clear_flag(g_weather_scene, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(g_weather_scene, LV_OBJ_FLAG_CLICKABLE);
+    rebuild_weather_animation(weather_kind_from_text(g_weather.text));
+
     lv_obj_t *rhythm_card = lv_obj_create(card);
-    lv_obj_set_size(rhythm_card, 300, 78);
-    lv_obj_set_pos(rhythm_card, 386, 184);
+    lv_obj_set_size(rhythm_card, 336, 60);
+    lv_obj_set_pos(rhythm_card, 366, 224);
     style_panel(rhythm_card, C_CARD_DARK, LV_OPA_40, 22);
     lv_obj_set_style_pad_all(rhythm_card, 0, 0);
-    make_label(rhythm_card, "Today Rhythm", &lv_font_montserrat_16, C_TEXT, 24, 12);
-    g_rhythm_label = make_label(rhythm_card, "25 min focus + 5 min break", &lv_font_montserrat_14, C_TEXT_DIM, 24, 48);
-    lv_obj_set_width(g_rhythm_label, 250);
+    make_label(rhythm_card, "Today Rhythm", &lv_font_montserrat_16, C_TEXT, 22, 8);
+    g_rhythm_label = make_label(rhythm_card, "25 min focus + 5 min break", &lv_font_montserrat_14, C_TEXT_DIM, 146, 12);
+    lv_obj_set_width(g_rhythm_label, 168);
     lv_label_set_long_mode(g_rhythm_label, LV_LABEL_LONG_DOT);
 
     lv_obj_t *bar_bg = lv_obj_create(rhythm_card);
-    lv_obj_set_size(bar_bg, 210, 8);
-    lv_obj_set_pos(bar_bg, 24, 36);
+    lv_obj_set_size(bar_bg, 120, 8);
+    lv_obj_set_pos(bar_bg, 22, 38);
     lv_obj_set_style_radius(bar_bg, 5, 0);
     lv_obj_set_style_bg_color(bar_bg, lv_color_hex(0x4B1D12), 0);
     lv_obj_set_style_border_width(bar_bg, 0, 0);
@@ -837,7 +1011,7 @@ static void create_main_card(lv_obj_t *scr)
     for (int i = 0; i < DEFAULT_ROUNDS; ++i) {
         g_round_dots[i] = lv_obj_create(rhythm_card);
         lv_obj_set_size(g_round_dots[i], 14, 14);
-        lv_obj_set_pos(g_round_dots[i], 26 + i * 54, 33);
+        lv_obj_set_pos(g_round_dots[i], 24 + i * 30, 35);
         lv_obj_set_style_radius(g_round_dots[i], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(g_round_dots[i], 0, 0);
         lv_obj_clear_flag(g_round_dots[i], LV_OBJ_FLAG_SCROLLABLE);
@@ -871,25 +1045,25 @@ static void show_main_page(void)
 static void add_setting_tile(lv_obj_t *parent, const char *name, const char *value,
                              int col, int row_idx, lv_event_cb_t minus_cb, lv_event_cb_t plus_cb)
 {
-    const int tile_w = 322;
-    const int tile_h = 62;
-    const int gap = 24;
+    (void)col;
+    const int tile_w = 650;
+    const int tile_h = 58;
     lv_obj_t *tile = lv_obj_create(parent);
     lv_obj_set_size(tile, tile_w, tile_h);
-    lv_obj_set_pos(tile, col * (tile_w + gap), row_idx * (tile_h + 14));
+    lv_obj_set_pos(tile, 0, row_idx * (tile_h + 14));
     style_panel(tile, C_CARD_DARK, LV_OPA_40, 16);
     lv_obj_set_style_pad_all(tile, 0, 0);
 
-    lv_obj_t *title = make_label(tile, name, &lv_font_montserrat_14, C_TEXT_DIM, 18, 10);
-    lv_obj_set_width(title, 150);
+    lv_obj_t *title = make_label(tile, name, &lv_font_montserrat_16, C_TEXT_DIM, 24, 18);
+    lv_obj_set_width(title, 230);
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
 
-    lv_obj_t *v = make_label(tile, value, &lv_font_montserrat_20, C_TEXT, 154, 20);
-    lv_obj_set_width(v, 78);
+    lv_obj_t *v = make_label(tile, value, &lv_font_montserrat_20, C_TEXT, 330, 17);
+    lv_obj_set_width(v, 132);
     lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
 
-    make_button(tile, "-", 232, 14, 36, 34, C_BUTTON_DARK, C_TEXT, minus_cb);
-    make_button(tile, "+", 274, 14, 36, 34, C_HIGHLIGHT, C_CARD_DARK, plus_cb);
+    make_button(tile, "-", 500, 11, 48, 36, C_BUTTON_DARK, C_TEXT, minus_cb);
+    make_button(tile, "+", 568, 11, 48, 36, C_HIGHLIGHT, C_CARD_DARK, plus_cb);
 }
 
 static void show_settings_page(void)
@@ -908,30 +1082,31 @@ static void show_settings_page(void)
     style_panel(panel, C_CARD_SOFT, LV_OPA_70, 24);
     lv_obj_set_style_pad_all(panel, 0, 0);
     make_label(panel, "Pomodoro Settings", &lv_font_montserrat_20, C_TEXT, 28, 20);
-    make_label(panel, "Large touch controls, no crowded rows.", &lv_font_montserrat_14,
-               C_TEXT_DIM, 252, 24);
     make_button(panel, "WiFi", 598, 16, 96, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_settings);
 
     g_settings_list = lv_obj_create(panel);
-    lv_obj_set_size(g_settings_list, 682, 228);
-    lv_obj_set_pos(g_settings_list, 25, 72);
+    lv_obj_set_size(g_settings_list, 660, 232);
+    lv_obj_set_pos(g_settings_list, 36, 70);
     lv_obj_set_style_bg_opa(g_settings_list, LV_OPA_0, 0);
     lv_obj_set_style_border_width(g_settings_list, 0, 0);
-    lv_obj_clear_flag(g_settings_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(g_settings_list, LV_DIR_VER);
+    lv_obj_set_style_width(g_settings_list, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(g_settings_list, lv_color_hex(C_HIGHLIGHT), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(g_settings_list, LV_OPA_50, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_all(g_settings_list, 0, 0);
 
     snprintf(buf, sizeof(buf), "%d min", g_focus_min);
     add_setting_tile(g_settings_list, "Focus", buf, 0, 0, on_focus_minus, on_focus_plus);
     snprintf(buf, sizeof(buf), "%d min", g_short_break_min);
-    add_setting_tile(g_settings_list, "Short Break", buf, 1, 0, on_break_minus, on_break_plus);
+    add_setting_tile(g_settings_list, "Short Break", buf, 0, 1, on_break_minus, on_break_plus);
     snprintf(buf, sizeof(buf), "%d min", g_long_break_min);
-    add_setting_tile(g_settings_list, "Long Break", buf, 0, 1, on_long_break_minus, on_long_break_plus);
+    add_setting_tile(g_settings_list, "Long Break", buf, 0, 2, on_long_break_minus, on_long_break_plus);
     snprintf(buf, sizeof(buf), "%d rounds", g_rounds);
-    add_setting_tile(g_settings_list, "Rounds", buf, 1, 1, on_round_minus, on_round_plus);
+    add_setting_tile(g_settings_list, "Rounds", buf, 0, 3, on_round_minus, on_round_plus);
     snprintf(buf, sizeof(buf), "%d min", g_weather_refresh_min);
-    add_setting_tile(g_settings_list, "Weather", buf, 0, 2, on_weather_minus, on_weather_plus);
+    add_setting_tile(g_settings_list, "Weather", buf, 0, 4, on_weather_minus, on_weather_plus);
     snprintf(buf, sizeof(buf), "%d%%", g_brightness_pct);
-    add_setting_tile(g_settings_list, "Brightness", buf, 1, 2, on_brightness_minus, on_brightness_plus);
+    add_setting_tile(g_settings_list, "Brightness", buf, 0, 5, on_brightness_minus, on_brightness_plus);
 
     make_button(g_scr, "Back", 330, 424, 140, 40, C_HIGHLIGHT, C_CARD_DARK, on_main);
 }
