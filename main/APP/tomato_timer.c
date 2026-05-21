@@ -2160,44 +2160,32 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static bool wait_for_valid_time(void)
+static const char *weather_from_wmo_code(int code)
 {
-    for (int i = 0; i < 30; ++i) {
-        if (time(NULL) >= MIN_VALID_TIME_EPOCH) return true;
-        weather_set_local_status("Time syncing");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    return time(NULL) >= MIN_VALID_TIME_EPOCH;
-}
-
-static const char *translate_weather_zh(const char *zh_weather)
-{
-    if (strstr(zh_weather, "晴")) return "Sunny";
-    if (strstr(zh_weather, "雨")) return "Rainy";
-    if (strstr(zh_weather, "雪")) return "Snowy";
-    if (strstr(zh_weather, "雷")) return "Stormy";
-    if (strstr(zh_weather, "雾") || strstr(zh_weather, "霾")) return "Foggy";
+    if (code == 0) return "Sunny";
+    if (code == 1 || code == 2 || code == 3) return "Cloudy";
+    if (code == 45 || code == 48) return "Foggy";
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "Rainy";
+    if ((code >= 71 && code <= 77) || code == 85 || code == 86) return "Snowy";
+    if (code >= 95 && code <= 99) return "Stormy";
     return "Cloudy";
 }
 
 static bool fetch_weather_once(void)
 {
-    if (!wait_for_valid_time()) {
-        weather_set_local_status("Time sync failed");
-        return false;
-    }
-
     http_capture_t cap = {0};
-    const char *url = "https://wis.qq.com/weather/common?source=pc&weather_type=observe&province=%E5%B9%BF%E4%B8%9C&city=%E4%B8%AD%E5%B1%B1";
+    const char *url = "http://api.open-meteo.com/v1/forecast?latitude=22.49&longitude=113.53&current=temperature_2m,relative_humidity_2m,weather_code";
 
     esp_http_client_config_t config = {
         .url = url,
         .event_handler = http_event_handler,
         .user_data = &cap,
-        .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 8000,
         .buffer_size = 1024,
     };
+
+    ESP_LOGI(TAG, "Weather sync start");
+    weather_set_local_status("Weather syncing");
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
@@ -2224,25 +2212,18 @@ static bool fetch_weather_once(void)
         return false;
     }
 
-    cJSON *data_node = cJSON_GetObjectItem(root, "data");
-    if (!cJSON_IsObject(data_node)) {
+    cJSON *current = cJSON_GetObjectItem(root, "current");
+    if (!cJSON_IsObject(current)) {
         cJSON_Delete(root);
         weather_set_local_status("Weather data empty");
         return false;
     }
 
-    cJSON *observe = cJSON_GetObjectItem(data_node, "observe");
-    if (!cJSON_IsObject(observe)) {
-        cJSON_Delete(root);
-        weather_set_local_status("Weather observe empty");
-        return false;
-    }
+    cJSON *degree = cJSON_GetObjectItem(current, "temperature_2m");
+    cJSON *humidity = cJSON_GetObjectItem(current, "relative_humidity_2m");
+    cJSON *weather_code = cJSON_GetObjectItem(current, "weather_code");
 
-    cJSON *degree = cJSON_GetObjectItem(observe, "degree");
-    cJSON *humidity = cJSON_GetObjectItem(observe, "humidity");
-    cJSON *weather_text = cJSON_GetObjectItem(observe, "weather");
-
-    if (!cJSON_IsString(degree) || !cJSON_IsString(humidity) || !cJSON_IsString(weather_text)) {
+    if (!cJSON_IsNumber(degree) || !cJSON_IsNumber(humidity) || !cJSON_IsNumber(weather_code)) {
         cJSON_Delete(root);
         weather_set_local_status("Weather value empty");
         return false;
@@ -2250,10 +2231,10 @@ static bool fetch_weather_once(void)
 
     if (xSemaphoreTake(g_weather_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         strncpy(g_weather.city, "Zhongshan", sizeof(g_weather.city) - 1);
-        strncpy(g_weather.temp, degree->valuestring, sizeof(g_weather.temp) - 1);
-        strncpy(g_weather.humidity, humidity->valuestring, sizeof(g_weather.humidity) - 1);
-        
-        const char *desc = translate_weather_zh(weather_text->valuestring);
+        snprintf(g_weather.temp, sizeof(g_weather.temp), "%.0f", degree->valuedouble);
+        snprintf(g_weather.humidity, sizeof(g_weather.humidity), "%.0f", humidity->valuedouble);
+
+        const char *desc = weather_from_wmo_code(weather_code->valueint);
         strncpy(g_weather.text, desc, sizeof(g_weather.text) - 1);
         
         strncpy(g_weather.status, "Weather updated", sizeof(g_weather.status) - 1);
@@ -2287,8 +2268,8 @@ static void weather_task(void *arg)
             continue;
         }
 
-        fetch_weather_once();
-        vTaskDelay(pdMS_TO_TICKS(g_weather_refresh_min * 60 * 1000));
+        bool ok = fetch_weather_once();
+        vTaskDelay(pdMS_TO_TICKS((ok ? g_weather_refresh_min * 60 : 60) * 1000));
     }
 }
 
