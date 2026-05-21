@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "APP/boot_ui.c"
         "APP/bird_launcher.c"
         "APP/game2048.c"
         "APP/lvgl_demo.c"
@@ -24,4 +25,3 @@ idf_component_register(
         nvs_flash
         json
         lwip)
-

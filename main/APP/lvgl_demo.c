@@ -19,7 +19,7 @@
  */
 
 #include "lvgl_demo.h"
-#include "menu.h"
+#include "boot_ui.h"
 #include "tomato_timer.h"
 #include "lcd.h"
 #include "touch.h"
@@ -49,7 +49,7 @@ void lvgl_demo(void)
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, 1 * 1000));           /* 启动定时器 */
 
     /* 还原为主菜单原生入口 */
-    menu_start();
+    boot_ui_start();
 
     while (1)
     {

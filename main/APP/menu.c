@@ -6,6 +6,7 @@
  */
 
 #include "menu.h"
+#include "boot_ui.h"
 #include "game2048.h"
 #include "reaction_test.h"
 #include "bird_launcher.h"
@@ -230,5 +231,7 @@ void menu_go_back(void)
     if (g_menu_scr && game_scr != g_menu_scr) {
         lv_scr_load(g_menu_scr);
         lv_obj_del(game_scr);
+    } else {
+        boot_ui_return_home();
     }
 }
