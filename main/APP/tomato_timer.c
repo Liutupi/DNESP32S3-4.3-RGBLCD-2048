@@ -31,7 +31,7 @@
 #define TOMATO_QWEATHER_JWT_SECRET_AVAILABLE 0
 #define TOMATO_QWEATHER_JWT_CREDENTIAL_ID ""
 #define TOMATO_QWEATHER_JWT_PROJECT_ID ""
-static const unsigned char TOMATO_QWEATHER_ED25519_SEED[32] = {0};
+static const unsigned char TOMATO_QWEATHER_ED25519_SEED[32] __attribute__((unused)) = {0};
 #endif
 #include <stdbool.h>
 #include <stdint.h>
