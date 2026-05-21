@@ -1985,135 +1985,6 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static bool json_get_string(cJSON *obj, const char *name, char *out, size_t out_len)
-{
-    cJSON *item = cJSON_GetObjectItem(obj, name);
-    if (!cJSON_IsString(item) || !item->valuestring) return false;
-    strncpy(out, item->valuestring, out_len - 1);
-    out[out_len - 1] = '\0';
-    return true;
-}
-
-static bool base64url_encode(const uint8_t *src, size_t src_len, char *out, size_t out_len)
-{
-    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    size_t needed = ((src_len + 2) / 3) * 4;
-    if (src_len % 3) needed -= 3 - (src_len % 3);
-    if (out_len < needed + 1) return false;
-
-    size_t pos = 0;
-    for (size_t i = 0; i < src_len; i += 3) {
-        size_t remain = src_len - i;
-        uint32_t triple = ((uint32_t)src[i]) << 16;
-        if (remain > 1) triple |= ((uint32_t)src[i + 1]) << 8;
-        if (remain > 2) triple |= src[i + 2];
-
-        out[pos++] = table[(triple >> 18) & 0x3F];
-        out[pos++] = table[(triple >> 12) & 0x3F];
-        if (remain > 1) out[pos++] = table[(triple >> 6) & 0x3F];
-        if (remain > 2) out[pos++] = table[triple & 0x3F];
-    }
-
-    out[pos] = '\0';
-    return true;
-}
-
-static bool qweather_sign_jwt_input(const char *input, uint8_t *signature,
-                                    size_t signature_len, size_t *signature_actual_len)
-{
-    psa_status_t status = psa_crypto_init();
-    if (status != PSA_SUCCESS) {
-        ESP_LOGW(TAG, "psa_crypto_init failed: %ld", (long)status);
-        return false;
-    }
-
-    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
-    psa_set_key_algorithm(&attributes, PSA_ALG_PURE_EDDSA);
-    psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS));
-    psa_set_key_bits(&attributes, 255);
-
-    psa_key_id_t key_id = 0;
-    status = psa_import_key(&attributes, TOMATO_QWEATHER_ED25519_SEED,
-                            sizeof(TOMATO_QWEATHER_ED25519_SEED), &key_id);
-    psa_reset_key_attributes(&attributes);
-    if (status != PSA_SUCCESS) {
-        ESP_LOGW(TAG, "psa_import_key failed: %ld", (long)status);
-        return false;
-    }
-
-    status = psa_sign_message(key_id, PSA_ALG_PURE_EDDSA, (const uint8_t *)input,
-                              strlen(input), signature, signature_len, signature_actual_len);
-    psa_destroy_key(key_id);
-    if (status != PSA_SUCCESS) {
-        ESP_LOGW(TAG, "psa_sign_message failed: %ld", (long)status);
-        return false;
-    }
-
-    return true;
-}
-
-static bool build_qweather_jwt(char *jwt, size_t jwt_len)
-{
-    if (!TOMATO_QWEATHER_JWT_SECRET_AVAILABLE ||
-        !has_text(TOMATO_QWEATHER_JWT_CREDENTIAL_ID) ||
-        !has_text(TOMATO_QWEATHER_JWT_PROJECT_ID)) {
-        weather_set_local_status("Set QWeather JWT");
-        return false;
-    }
-
-    time_t now = time(NULL);
-    if (now < MIN_VALID_TIME_EPOCH) {
-        weather_set_local_status("Time syncing");
-        return false;
-    }
-
-    char header_json[96];
-    char payload_json[128];
-    snprintf(header_json, sizeof(header_json), "{\"alg\":\"EdDSA\",\"kid\":\"%s\"}",
-             TOMATO_QWEATHER_JWT_CREDENTIAL_ID);
-    snprintf(payload_json, sizeof(payload_json), "{\"sub\":\"%s\",\"iat\":%ld,\"exp\":%ld}",
-             TOMATO_QWEATHER_JWT_PROJECT_ID, (long)now, (long)(now + QWEATHER_JWT_TTL_S));
-
-    char header_b64[128];
-    char payload_b64[192];
-    if (!base64url_encode((const uint8_t *)header_json, strlen(header_json),
-                          header_b64, sizeof(header_b64)) ||
-        !base64url_encode((const uint8_t *)payload_json, strlen(payload_json),
-                          payload_b64, sizeof(payload_b64))) {
-        weather_set_local_status("JWT encode failed");
-        return false;
-    }
-
-    char signing_input[320];
-    int n = snprintf(signing_input, sizeof(signing_input), "%s.%s", header_b64, payload_b64);
-    if (n < 0 || (size_t)n >= sizeof(signing_input)) {
-        weather_set_local_status("JWT too long");
-        return false;
-    }
-
-    uint8_t signature[64];
-    size_t signature_len = 0;
-    if (!qweather_sign_jwt_input(signing_input, signature, sizeof(signature), &signature_len)) {
-        weather_set_local_status("JWT sign failed");
-        return false;
-    }
-
-    char signature_b64[96];
-    if (!base64url_encode(signature, signature_len, signature_b64, sizeof(signature_b64))) {
-        weather_set_local_status("JWT sig encode failed");
-        return false;
-    }
-
-    n = snprintf(jwt, jwt_len, "%s.%s", signing_input, signature_b64);
-    if (n < 0 || (size_t)n >= jwt_len) {
-        weather_set_local_status("JWT output too long");
-        return false;
-    }
-
-    return true;
-}
-
 static bool wait_for_valid_time(void)
 {
     for (int i = 0; i < 30; ++i) {
@@ -2124,6 +1995,16 @@ static bool wait_for_valid_time(void)
     return time(NULL) >= MIN_VALID_TIME_EPOCH;
 }
 
+static const char *translate_weather_zh(const char *zh_weather)
+{
+    if (strstr(zh_weather, "晴")) return "Sunny";
+    if (strstr(zh_weather, "雨")) return "Rainy";
+    if (strstr(zh_weather, "雪")) return "Snowy";
+    if (strstr(zh_weather, "雷")) return "Stormy";
+    if (strstr(zh_weather, "雾") || strstr(zh_weather, "霾")) return "Foggy";
+    return "Cloudy";
+}
+
 static bool fetch_weather_once(void)
 {
     if (!wait_for_valid_time()) {
@@ -2131,16 +2012,8 @@ static bool fetch_weather_once(void)
         return false;
     }
 
-    char jwt[512];
-    if (!build_qweather_jwt(jwt, sizeof(jwt))) {
-        return false;
-    }
-
     http_capture_t cap = {0};
-    char url[160];
-    snprintf(url, sizeof(url),
-             "https://devapi.qweather.com/v7/weather/now?location=%s&lang=en&unit=m",
-             TOMATO_QWEATHER_LOCATION);
+    const char *url = "https://wis.qq.com/weather/common?source=pc&weather_type=observe&province=%E5%B9%BF%E4%B8%9C&city=%E4%B8%AD%E5%B1%B1";
 
     esp_http_client_config_t config = {
         .url = url,
@@ -2157,16 +2030,16 @@ static bool fetch_weather_once(void)
         return false;
     }
 
-    char auth_header[544];
-    snprintf(auth_header, sizeof(auth_header), "Bearer %s", jwt);
-    esp_http_client_set_header(client, "Authorization", auth_header);
+    esp_http_client_set_header(client, "User-Agent", "Mozilla/5.0");
+    esp_http_client_set_header(client, "Referer", "https://wis.qq.com/");
+
     esp_err_t err = esp_http_client_perform(client);
     int http_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
 
     if (err != ESP_OK || http_code != 200) {
-        ESP_LOGW(TAG, "weather request failed: err=%s code=%d", esp_err_to_name(err), http_code);
-        weather_set_local_status(http_code == 401 ? "QWeather auth failed" : "Weather offline");
+        ESP_LOGW(TAG, "weather request failed: err=%s code=%d body=%s", esp_err_to_name(err), http_code, cap.data);
+        weather_set_local_status("Weather offline");
         return false;
     }
 
@@ -2176,23 +2049,43 @@ static bool fetch_weather_once(void)
         return false;
     }
 
-    cJSON *code = cJSON_GetObjectItem(root, "code");
-    cJSON *now = cJSON_GetObjectItem(root, "now");
-    if (!cJSON_IsString(code) || strcmp(code->valuestring, "200") != 0 || !cJSON_IsObject(now)) {
+    cJSON *data_node = cJSON_GetObjectItem(root, "data");
+    if (!cJSON_IsObject(data_node)) {
         cJSON_Delete(root);
-        weather_set_local_status("QWeather rejected");
+        weather_set_local_status("Weather data empty");
+        return false;
+    }
+
+    cJSON *observe = cJSON_GetObjectItem(data_node, "observe");
+    if (!cJSON_IsObject(observe)) {
+        cJSON_Delete(root);
+        weather_set_local_status("Weather observe empty");
+        return false;
+    }
+
+    cJSON *degree = cJSON_GetObjectItem(observe, "degree");
+    cJSON *humidity = cJSON_GetObjectItem(observe, "humidity");
+    cJSON *weather_text = cJSON_GetObjectItem(observe, "weather");
+
+    if (!cJSON_IsString(degree) || !cJSON_IsString(humidity) || !cJSON_IsString(weather_text)) {
+        cJSON_Delete(root);
+        weather_set_local_status("Weather value empty");
         return false;
     }
 
     if (xSemaphoreTake(g_weather_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-        strncpy(g_weather.city, "Zhongshan Nanlang", sizeof(g_weather.city) - 1);
-        json_get_string(now, "temp", g_weather.temp, sizeof(g_weather.temp));
-        json_get_string(now, "text", g_weather.text, sizeof(g_weather.text));
-        json_get_string(now, "humidity", g_weather.humidity, sizeof(g_weather.humidity));
-        strncpy(g_weather.status, "QWeather updated", sizeof(g_weather.status) - 1);
+        strncpy(g_weather.city, "Zhongshan", sizeof(g_weather.city) - 1);
+        strncpy(g_weather.temp, degree->valuestring, sizeof(g_weather.temp) - 1);
+        strncpy(g_weather.humidity, humidity->valuestring, sizeof(g_weather.humidity) - 1);
+        
+        const char *desc = translate_weather_zh(weather_text->valuestring);
+        strncpy(g_weather.text, desc, sizeof(g_weather.text) - 1);
+        
+        strncpy(g_weather.status, "Weather updated", sizeof(g_weather.status) - 1);
         g_weather.online = true;
         g_weather_dirty = true;
         xSemaphoreGive(g_weather_mutex);
+        ESP_LOGI(TAG, "Weather sync success! Temp=%s Hum=%s Text=%s", g_weather.temp, g_weather.humidity, g_weather.text);
     }
 
     cJSON_Delete(root);

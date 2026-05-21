@@ -1,7 +1,14 @@
 idf_component_register(
-    SRC_DIRS 
-        "."
-        "APP"
+    SRCS
+        "main.c"
+        "APP/bird_launcher.c"
+        "APP/game2048.c"
+        "APP/lvgl_demo.c"
+        "APP/menu.c"
+        "APP/photoviewer.c"
+        "APP/reaction_test.c"
+        "APP/tjpgd.c"
+        "APP/tomato_timer.c"
     INCLUDE_DIRS 
         "."
         "APP"
