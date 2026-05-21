@@ -18,6 +18,7 @@
 #include "esp_sntp.h"
 #include "esp_wifi.h"
 #include "lwip/sockets.h"
+#include "miniz.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
@@ -71,6 +72,14 @@ static const unsigned char TOMATO_QWEATHER_ED25519_SEED[32] = {0};
 #endif
 #endif
 
+#ifndef TOMATO_QWEATHER_API_HOST
+#ifdef CONFIG_TOMATO_QWEATHER_API_HOST
+#define TOMATO_QWEATHER_API_HOST CONFIG_TOMATO_QWEATHER_API_HOST
+#else
+#define TOMATO_QWEATHER_API_HOST "devapi.qweather.com"
+#endif
+#endif
+
 #define TAG "TomatoGlow"
 
 #define SCREEN_W 800
@@ -82,7 +91,7 @@ static const unsigned char TOMATO_QWEATHER_ED25519_SEED[32] = {0};
 #define DEFAULT_ROUNDS          4
 #define DEFAULT_WEATHER_MIN     30
 
-#define WEATHER_BUF_SIZE 1536
+#define WEATHER_BUF_SIZE 4096
 #define WIFI_CONNECTED_BIT BIT0
 #define QWEATHER_JWT_TTL_S (60 * 60)
 #define MIN_VALID_TIME_EPOCH 1704067200
@@ -237,6 +246,26 @@ static void on_settings(lv_event_t *e);
 static bool has_text(const char *s)
 {
     return s && s[0] != '\0';
+}
+
+static bool has_qweather_api_key(void)
+{
+    return has_text(TOMATO_QWEATHER_API_KEY);
+}
+
+static bool has_qweather_jwt_credentials(void)
+{
+    return TOMATO_QWEATHER_JWT_SECRET_AVAILABLE &&
+           has_text(TOMATO_QWEATHER_JWT_CREDENTIAL_ID) &&
+           has_text(TOMATO_QWEATHER_JWT_PROJECT_ID);
+}
+
+static const char *qweather_api_host(void)
+{
+    const char *host = TOMATO_QWEATHER_API_HOST;
+    if (strncmp(host, "https://", 8) == 0) return host + 8;
+    if (strncmp(host, "http://", 7) == 0) return host + 7;
+    return host;
 }
 
 static const char *wifi_auth_name(wifi_auth_mode_t authmode)
@@ -2018,6 +2047,38 @@ static bool base64url_encode(const uint8_t *src, size_t src_len, char *out, size
     return true;
 }
 
+static bool gzip_decode(const uint8_t *src, size_t src_len, char *out, size_t out_len)
+{
+    if (src_len < 18 || src[0] != 0x1f || src[1] != 0x8b || src[2] != 8 || out_len == 0) {
+        return false;
+    }
+
+    uint8_t flags = src[3];
+    size_t pos = 10;
+    if (flags & 0x04) {
+        if (pos + 2 > src_len) return false;
+        uint16_t extra_len = src[pos] | ((uint16_t)src[pos + 1] << 8);
+        pos += 2 + extra_len;
+    }
+    if (flags & 0x08) {
+        while (pos < src_len && src[pos++] != 0) {}
+    }
+    if (flags & 0x10) {
+        while (pos < src_len && src[pos++] != 0) {}
+    }
+    if (flags & 0x02) pos += 2;
+    if (pos >= src_len || src_len - pos <= 8) return false;
+
+    size_t written = tinfl_decompress_mem_to_mem(
+        out, out_len - 1, src + pos, src_len - pos - 8,
+        TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+    if (written == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED) {
+        return false;
+    }
+    out[written] = '\0';
+    return true;
+}
+
 static bool qweather_sign_jwt_input(const char *input, uint8_t *signature,
                                     size_t signature_len, size_t *signature_actual_len)
 {
@@ -2055,9 +2116,7 @@ static bool qweather_sign_jwt_input(const char *input, uint8_t *signature,
 
 static bool build_qweather_jwt(char *jwt, size_t jwt_len)
 {
-    if (!TOMATO_QWEATHER_JWT_SECRET_AVAILABLE ||
-        !has_text(TOMATO_QWEATHER_JWT_CREDENTIAL_ID) ||
-        !has_text(TOMATO_QWEATHER_JWT_PROJECT_ID)) {
+    if (!has_qweather_jwt_credentials()) {
         weather_set_local_status("Set QWeather JWT");
         return false;
     }
@@ -2072,8 +2131,9 @@ static bool build_qweather_jwt(char *jwt, size_t jwt_len)
     char payload_json[128];
     snprintf(header_json, sizeof(header_json), "{\"alg\":\"EdDSA\",\"kid\":\"%s\"}",
              TOMATO_QWEATHER_JWT_CREDENTIAL_ID);
+    time_t iat = now - 30;
     snprintf(payload_json, sizeof(payload_json), "{\"sub\":\"%s\",\"iat\":%ld,\"exp\":%ld}",
-             TOMATO_QWEATHER_JWT_PROJECT_ID, (long)now, (long)(now + QWEATHER_JWT_TTL_S));
+             TOMATO_QWEATHER_JWT_PROJECT_ID, (long)iat, (long)(iat + QWEATHER_JWT_TTL_S));
 
     char header_b64[128];
     char payload_b64[192];
@@ -2126,21 +2186,31 @@ static bool wait_for_valid_time(void)
 
 static bool fetch_weather_once(void)
 {
-    if (!wait_for_valid_time()) {
-        weather_set_local_status("Time sync failed");
+    char jwt[512];
+    bool use_jwt = has_qweather_jwt_credentials();
+    bool use_api_key = has_qweather_api_key();
+
+    if (!use_jwt && !use_api_key) {
+        weather_set_local_status("Set QWeather auth");
         return false;
     }
 
-    char jwt[512];
-    if (!build_qweather_jwt(jwt, sizeof(jwt))) {
-        return false;
+    if (use_jwt) {
+        if (!wait_for_valid_time()) {
+            weather_set_local_status("Time sync failed");
+            return false;
+        }
+
+        if (!build_qweather_jwt(jwt, sizeof(jwt))) {
+            return false;
+        }
     }
 
     http_capture_t cap = {0};
-    char url[160];
+    char url[256];
     snprintf(url, sizeof(url),
-             "https://devapi.qweather.com/v7/weather/now?location=%s&lang=en&unit=m",
-             TOMATO_QWEATHER_LOCATION);
+             "https://%s/v7/weather/now?location=%s&lang=en&unit=m",
+             qweather_api_host(), TOMATO_QWEATHER_LOCATION);
 
     esp_http_client_config_t config = {
         .url = url,
@@ -2157,20 +2227,35 @@ static bool fetch_weather_once(void)
         return false;
     }
 
-    char auth_header[544];
-    snprintf(auth_header, sizeof(auth_header), "Bearer %s", jwt);
-    esp_http_client_set_header(client, "Authorization", auth_header);
+    if (use_jwt) {
+        char auth_header[544];
+        snprintf(auth_header, sizeof(auth_header), "Bearer %s", jwt);
+        esp_http_client_set_header(client, "Authorization", auth_header);
+    } else {
+        esp_http_client_set_header(client, "X-QW-Api-Key", TOMATO_QWEATHER_API_KEY);
+    }
     esp_err_t err = esp_http_client_perform(client);
     int http_code = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
 
     if (err != ESP_OK || http_code != 200) {
         ESP_LOGW(TAG, "weather request failed: err=%s code=%d", esp_err_to_name(err), http_code);
-        weather_set_local_status(http_code == 401 ? "QWeather auth failed" : "Weather offline");
+        weather_set_local_status(http_code == 401 ? "QWeather auth failed" :
+                                 http_code == 403 ? "QWeather host denied" : "Weather offline");
         return false;
     }
 
-    cJSON *root = cJSON_Parse(cap.data);
+    char json_data[WEATHER_BUF_SIZE];
+    const char *payload = cap.data;
+    if (cap.len >= 2 && (uint8_t)cap.data[0] == 0x1f && (uint8_t)cap.data[1] == 0x8b) {
+        if (!gzip_decode((const uint8_t *)cap.data, cap.len, json_data, sizeof(json_data))) {
+            weather_set_local_status("Weather gzip failed");
+            return false;
+        }
+        payload = json_data;
+    }
+
+    cJSON *root = cJSON_Parse(payload);
     if (!root) {
         weather_set_local_status("Weather parse failed");
         return false;
@@ -2189,7 +2274,8 @@ static bool fetch_weather_once(void)
         json_get_string(now, "temp", g_weather.temp, sizeof(g_weather.temp));
         json_get_string(now, "text", g_weather.text, sizeof(g_weather.text));
         json_get_string(now, "humidity", g_weather.humidity, sizeof(g_weather.humidity));
-        strncpy(g_weather.status, "QWeather updated", sizeof(g_weather.status) - 1);
+        strncpy(g_weather.status, use_jwt ? "QWeather updated (JWT)" : "QWeather updated (API key)",
+                sizeof(g_weather.status) - 1);
         g_weather.online = true;
         g_weather_dirty = true;
         xSemaphoreGive(g_weather_mutex);

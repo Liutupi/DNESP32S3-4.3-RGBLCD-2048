@@ -16,8 +16,16 @@ config TOMATO_QWEATHER_API_KEY
     string "Legacy QWeather API key"
     default ""
     help
-        Kept only for old API key credentials. Tomato Glow Clock now uses local JWT
-        signing when main/APP/qweather_jwt_secret.h is present.
+        QWeather API key credential. Tomato Glow Clock prefers local JWT signing
+        when main/APP/qweather_jwt_secret.h is present, otherwise it uses this key.
+
+config TOMATO_QWEATHER_API_HOST
+    string "QWeather API Host"
+    default "devapi.qweather.com"
+    help
+        QWeather API Host from Console - Settings, for example
+        abc1234xyz.def.qweatherapi.com. The legacy devapi.qweather.com may return
+        Invalid Host for newer credentials.
 
 config TOMATO_QWEATHER_LOCATION
     string "QWeather location"

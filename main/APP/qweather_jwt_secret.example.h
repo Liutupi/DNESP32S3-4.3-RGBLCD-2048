@@ -2,7 +2,8 @@
 
 /*
  * Copy this file to qweather_jwt_secret.h and fill in your own QWeather JWT
- * credential values. Keep qweather_jwt_secret.h private.
+ * credential values, or run tools/generate_qweather_jwt_secret.py with your
+ * ed25519-private.pem. Keep qweather_jwt_secret.h private.
  */
 
 #define TOMATO_QWEATHER_JWT_CREDENTIAL_ID "YOUR_CREDENTIAL_ID"
