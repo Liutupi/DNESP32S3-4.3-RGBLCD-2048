@@ -9,6 +9,7 @@ idf_component_register(
         "APP/photoviewer.c"
         "APP/racing_game.c"
         "APP/radio_headless_test.c"
+        "APP/radio_stations.c"
         "APP/reaction_test.c"
         "APP/tjpgd.c"
         "APP/tomato_timer.c"
