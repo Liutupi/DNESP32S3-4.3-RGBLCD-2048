@@ -38,11 +38,23 @@
 #define BUTTON_POLL_MS              20
 #define BEEP_LOOPS_BEFORE_IDLE_LOG  5
 
+/*
+ * I2S 引脚定义 (对照 PINOUT.md 和原理图)
+ * -----------------------------------------------
+ * IO3  = I2S_MCLK  -> ES8388 MCLK
+ * IO46 = I2S_SCK   -> ES8388 SCK (BCLK)
+ * IO9  = I2S_LRCK  -> ES8388 LRCK (WS)
+ * IO10 = I2S_SDIN  -> ES8388 DAC SDIN (数据输入到 ES8388)
+ * IO14 = I2S_SDOUT -> ES8388 ADC SDOUT (数据从 ES8388 输出)
+ * -----------------------------------------------
+ * ESP32 I2S data_out (TX) 连接到 ES8388 DAC SDIN
+ * ESP32 I2S data_in  (RX) 连接到 ES8388 ADC SDOUT
+ */
 #define I2S_MCLK_GPIO               GPIO_NUM_3
 #define I2S_BCLK_GPIO               GPIO_NUM_46
 #define I2S_LRCK_GPIO               GPIO_NUM_9
-#define I2S_DOUT_GPIO               GPIO_NUM_10
-#define I2S_DIN_GPIO                GPIO_NUM_14
+#define I2S_DOUT_GPIO               GPIO_NUM_10   /* ESP32 TX -> ES8388 DAC SDIN */
+#define I2S_DIN_GPIO                GPIO_NUM_14   /* ESP32 RX <- ES8388 ADC SDOUT */
 #define BOOT_GPIO                   GPIO_NUM_0
 
 #define RAW_BUFFER_SIZE             (16 * 1024)
@@ -61,13 +73,16 @@ typedef enum {
 } button_event_t;
 
 static bool s_i2s_installed = false;
+static int s_i2s_sample_rate = 0;
 static i2c_master_dev_handle_t s_es8388 = NULL;
-static bool s_radio_running = false;
-static bool s_radio_paused = false;
+static volatile bool s_radio_running = false;
+static volatile bool s_radio_muted = false;
 static volatile int s_current_station = 0;
 static volatile int s_station_changed = 0;
-static int s_current_url = 0;
 static RingbufHandle_t s_pcm_ring = NULL;
+
+static volatile bool s_stream_task_done = false;
+static volatile bool s_play_task_done = false;
 
 static bool wifi_is_connected(void)
 {
@@ -98,7 +113,7 @@ static void warning_page_show(void)
     lv_label_set_text(body,
                       "Screen off, speaker on\n"
                       "BOOT click: next\n"
-                      "BOOT double: pause\n"
+                      "BOOT double: mute/resume\n"
                       "BOOT hold: exit");
     lv_obj_set_style_text_font(body, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(body, lv_color_hex(0xE58A3A), 0);
@@ -140,7 +155,6 @@ static void boot_button_init(void)
 
 static button_event_t poll_button(void)
 {
-    static int64_t s_last_click = 0;
     static int64_t s_last_press = 0;
     static bool s_was_pressed = false;
     static int64_t s_double_window = 0;
@@ -166,7 +180,7 @@ static button_event_t poll_button(void)
 
         if (s_waiting_double && (now - s_double_window) < DEBOUNCE_DOUBLE_MS) {
             s_waiting_double = false;
-            ESP_LOGI(TAG, "button double click: pause/resume");
+            ESP_LOGI(TAG, "button double click: mute/resume");
             return BTN_EVENT_DOUBLE_CLICK;
         }
 
@@ -281,16 +295,20 @@ static void es8388_stop(void)
     xl9555_pin_write(SPK_EN_IO, 1);
 }
 
-static esp_err_t i2s_init(void)
+static esp_err_t i2s_init_with_rate(int sample_rate);
+static void radio_i2s_stop(void);
+
+static esp_err_t i2s_init_with_rate(int sample_rate)
 {
-    ESP_LOGI(TAG, "Init I2S: start, DOUT GPIO%d, DIN GPIO%d", I2S_DOUT_GPIO, I2S_DIN_GPIO);
-    ESP_LOGI(TAG, "sample rate: %d", SAMPLE_RATE_HZ);
+    ESP_LOGI(TAG, "Init I2S: start, DOUT=GPIO%d (->ES8388 SDIN), DIN=GPIO%d (<-ES8388 SDOUT)",
+             I2S_DOUT_GPIO, I2S_DIN_GPIO);
+    ESP_LOGI(TAG, "sample rate: %d", sample_rate);
     ESP_LOGI(TAG, "channels: stereo");
     ESP_LOGI(TAG, "bits per sample: 16");
 
     i2s_config_t i2s_config = {
         .mode = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX,
-        .sample_rate = SAMPLE_RATE_HZ,
+        .sample_rate = sample_rate,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
@@ -311,11 +329,27 @@ static esp_err_t i2s_init(void)
 
     ESP_RETURN_ON_ERROR(i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL), TAG, "i2s driver install failed");
     s_i2s_installed = true;
+    s_i2s_sample_rate = sample_rate;
     ESP_RETURN_ON_ERROR(i2s_set_pin(I2S_NUM_0, &pin_config), TAG, "i2s set pin failed");
     ESP_RETURN_ON_ERROR(i2s_zero_dma_buffer(I2S_NUM_0), TAG, "i2s zero dma failed");
     ESP_RETURN_ON_ERROR(i2s_start(I2S_NUM_0), TAG, "i2s start failed");
-    ESP_LOGI(TAG, "Init I2S: success");
+    ESP_LOGI(TAG, "Init I2S: success (sample_rate=%d)", sample_rate);
     return ESP_OK;
+}
+
+static esp_err_t i2s_init(void)
+{
+    return i2s_init_with_rate(SAMPLE_RATE_HZ);
+}
+
+static esp_err_t i2s_reinit(int new_sample_rate)
+{
+    if (new_sample_rate == s_i2s_sample_rate) {
+        return ESP_OK;
+    }
+    ESP_LOGI(TAG, "Reinit I2S: %d -> %d", s_i2s_sample_rate, new_sample_rate);
+    radio_i2s_stop();
+    return i2s_init_with_rate(new_sample_rate);
 }
 
 static void radio_i2s_stop(void)
@@ -325,14 +359,13 @@ static void radio_i2s_stop(void)
         i2s_stop(I2S_NUM_0);
         i2s_driver_uninstall(I2S_NUM_0);
         s_i2s_installed = false;
+        s_i2s_sample_rate = 0;
     }
 }
 
 static size_t radio_audio_write_pcm(const int16_t *samples, size_t sample_count)
 {
     if (!s_i2s_installed || !samples || sample_count == 0) {
-        ESP_LOGW(TAG, "radio_audio_write_pcm: invalid params (i2s=%d, samples=%p, count=%u)",
-                 s_i2s_installed, samples, (unsigned)sample_count);
         return 0;
     }
 
@@ -469,9 +502,31 @@ static void pcm_ring_deinit(void)
     }
 }
 
+static void log_current_station(void)
+{
+    int idx = s_current_station;
+    int total = radio_stations_count();
+    const radio_station_t *station = radio_station_get(idx);
+    if (!station) return;
+
+    ESP_LOGI(TAG, "=== Current Station ===");
+    ESP_LOGI(TAG, "  index: %d/%d", idx + 1, total);
+    ESP_LOGI(TAG, "  name: %s", station->name);
+    ESP_LOGI(TAG, "  category: %s", station->category);
+    for (int i = 0; i < RADIO_MAX_URLS; i++) {
+        const char *url = station->urls[i];
+        ESP_LOGI(TAG, "  url[%d]: %s", i, url[0] ? url : "(empty)");
+    }
+    ESP_LOGI(TAG, "  muted: %s", s_radio_muted ? "yes" : "no");
+    ESP_LOGI(TAG, "  i2s_sample_rate: %d", s_i2s_sample_rate);
+    ESP_LOGI(TAG, "========================");
+}
+
 static void play_task(void *arg)
 {
     ESP_LOGI(TAG, "play task started");
+    s_play_task_done = false;
+
     uint32_t play_count = 0;
     while (s_radio_running) {
         size_t rx_size = 0;
@@ -480,16 +535,18 @@ static void play_task(void *arg)
             continue;
         }
 
-        if (!s_radio_paused) {
+        if (!s_radio_muted) {
             size_t samples = rx_size / sizeof(int16_t);
-            size_t written = radio_audio_write_pcm((int16_t *)item, samples);
+            radio_audio_write_pcm((int16_t *)item, samples);
             play_count++;
-            if (play_count <= 5 || play_count % 100 == 0) {
-                ESP_LOGI(TAG, "play: rx_size=%u samples=%u written=%u", (unsigned)rx_size, (unsigned)samples, (unsigned)written);
+            if (play_count <= 5 || play_count % 500 == 0) {
+                ESP_LOGD(TAG, "play: rx_size=%u samples=%u", (unsigned)rx_size, (unsigned)samples);
             }
         }
         vRingbufferReturnItem(s_pcm_ring, item);
     }
+
+    s_play_task_done = true;
     ESP_LOGI(TAG, "play task stopped");
     vTaskDelete(NULL);
 }
@@ -499,20 +556,20 @@ static bool stream_station(const radio_station_t *station, int station_index)
     int total_urls = radio_stations_count();
     bool played = false;
 
-    ESP_LOGI(TAG, "stream_station: name=%s index=%d", station->name, station_index);
+    ESP_LOGI(TAG, "stream_station: name=%s index=%d/%d", station->name, station_index + 1, total_urls);
 
     for (int url_idx = 0; url_idx < RADIO_MAX_URLS; url_idx++) {
         const char *url = radio_station_url_get(station_index, url_idx);
         if (!url || !url[0]) {
-            ESP_LOGD(TAG, "  url[%d]: empty", url_idx);
             continue;
         }
-        ESP_LOGI(TAG, "  url[%d]: %s", url_idx, url);
 
         if (!url_looks_playable(url)) {
             ESP_LOGW(TAG, "Skip non-MP3 url: %s", url);
             continue;
         }
+
+        if (!s_radio_running || s_station_changed) break;
 
         probe_result_t probe = probe_url(url, station_index, url_idx);
         if (!probe.ok) {
@@ -597,13 +654,12 @@ static bool stream_station(const radio_station_t *station, int station_index)
         int no_decode_count = 0;
         uint32_t decoded_frames = 0;
         bool stream_ok = true;
+        bool unsupported_rate = false;
 
         ESP_LOGI(TAG, "Start streaming: %s", station->name);
-        ESP_LOGI(TAG, "  raw_buffer=%p pcm_buffer=%p", raw_buffer, pcm_buffer);
-        ESP_LOGI(TAG, "  decoder=%p", decoder);
 
         int my_station = station_index;
-        while (s_radio_running && stream_ok) {
+        while (s_radio_running && stream_ok && !unsupported_rate) {
             if (s_station_changed || my_station != s_current_station) {
                 ESP_LOGI(TAG, "Station changed, breaking stream");
                 break;
@@ -632,10 +688,6 @@ static bool stream_station(const radio_station_t *station, int station_index)
                 esp_audio_dec_info_t info = {0};
 
                 dec_err = esp_mp3_dec_decode(decoder, &raw, &frame, &info);
-                ESP_LOGD(TAG, "decode error=%d raw.consumed=%u frame.decoded_size=%u "
-                              "sample_rate=%d channels=%d bitrate=%d",
-                         dec_err, (unsigned)raw.consumed, (unsigned)frame.decoded_size,
-                         info.sample_rate, info.channel, info.bitrate);
 
                 if (dec_err != ESP_AUDIO_ERR_OK || raw.consumed == 0) {
                     ESP_LOGW(TAG, "decoder error=%d consumed=%u", dec_err, (unsigned)raw.consumed);
@@ -653,6 +705,25 @@ static bool stream_station(const radio_station_t *station, int station_index)
                 if (frame.decoded_size == 0) continue;
 
                 decoded_frames++;
+
+                if (decoded_frames == 1 && info.sample_rate > 0) {
+                    ESP_LOGI(TAG, "First decoded frame: sample_rate=%d channels=%d bitrate=%d",
+                             info.sample_rate, info.channel, info.bitrate);
+
+                    if (info.sample_rate != SAMPLE_RATE_HZ) {
+                        ESP_LOGW(TAG, "MP3 sample_rate=%d != I2S sample_rate=%d",
+                                 info.sample_rate, SAMPLE_RATE_HZ);
+
+                        esp_err_t reinit_ret = i2s_reinit(info.sample_rate);
+                        if (reinit_ret != ESP_OK) {
+                            ESP_LOGE(TAG, "I2S reinit to %dHz failed, skipping station",
+                                     info.sample_rate);
+                            unsupported_rate = true;
+                            break;
+                        }
+                    }
+                }
+
                 if (decoded_frames <= 3 || decoded_frames % 200 == 0) {
                     ESP_LOGI(TAG, "decoded frame=%u consumed=%u decoded_size=%u "
                                   "sample_rate=%d channels=%d bitrate=%d",
@@ -662,10 +733,7 @@ static bool stream_station(const radio_station_t *station, int station_index)
                 }
 
                 if (s_pcm_ring && frame.decoded_size > 0) {
-                    esp_err_t send_ret = xRingbufferSend(s_pcm_ring, pcm_buffer, frame.decoded_size, pdMS_TO_TICKS(100));
-                    if (send_ret != pdTRUE) {
-                        ESP_LOGW(TAG, "PCM ring buffer send failed");
-                    }
+                    xRingbufferSend(s_pcm_ring, pcm_buffer, frame.decoded_size, pdMS_TO_TICKS(100));
                 }
             }
 
@@ -689,6 +757,11 @@ static bool stream_station(const radio_station_t *station, int station_index)
         esp_http_client_cleanup(client);
         pcm_ring_flush();
 
+        if (unsupported_rate) {
+            ESP_LOGW(TAG, "Skipping station due to unsupported sample rate");
+            break;
+        }
+
         if (decoded_frames > 0) {
             played = true;
             break;
@@ -701,6 +774,7 @@ static bool stream_station(const radio_station_t *station, int station_index)
 static void stream_task(void *arg)
 {
     ESP_LOGI(TAG, "stream task started");
+    s_stream_task_done = false;
 
     while (s_radio_running) {
         if (!wifi_is_connected()) {
@@ -731,12 +805,13 @@ static void stream_task(void *arg)
                  s_current_station + 1, station_count, station->name, station->category);
 
         bool played = stream_station(station, s_current_station);
-        if (!played && s_radio_running) {
+        if (!played && s_radio_running && !s_station_changed) {
             ESP_LOGW(TAG, "Source failed for station: %s", station->name);
             vTaskDelay(pdMS_TO_TICKS(2000));
         }
     }
 
+    s_stream_task_done = true;
     ESP_LOGI(TAG, "stream task stopped");
     vTaskDelete(NULL);
 }
@@ -779,8 +854,11 @@ static void run_radio(void)
     }
 
     s_radio_running = true;
-    s_radio_paused = false;
+    s_radio_muted = false;
     s_current_station = 0;
+    s_station_changed = 0;
+    s_stream_task_done = false;
+    s_play_task_done = false;
 
     TaskHandle_t stream_handle = NULL;
     TaskHandle_t play_handle = NULL;
@@ -794,6 +872,8 @@ static void run_radio(void)
         s_radio_running = false;
     }
 
+    log_current_station();
+
     while (s_radio_running) {
         button_event_t event = poll_button();
         switch (event) {
@@ -802,10 +882,11 @@ static void run_radio(void)
                 s_current_station = (s_current_station + 1) % radio_stations_count();
                 s_station_changed++;
                 pcm_ring_flush();
+                log_current_station();
                 break;
             case BTN_EVENT_DOUBLE_CLICK:
-                s_radio_paused = !s_radio_paused;
-                ESP_LOGI(TAG, "button double click: %s", s_radio_paused ? "paused" : "resumed");
+                s_radio_muted = !s_radio_muted;
+                ESP_LOGI(TAG, "button double click: %s", s_radio_muted ? "muted" : "resumed");
                 break;
             case BTN_EVENT_LONG_PRESS:
                 ESP_LOGI(TAG, "button long press: exit");
@@ -817,13 +898,22 @@ static void run_radio(void)
         vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
     }
 
-    for (int i = 0; i < 50 && (stream_handle || play_handle); i++) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+    ESP_LOGI(TAG, "Waiting for tasks to finish...");
+    for (int i = 0; i < 100; i++) {
+        if (s_stream_task_done && s_play_task_done) {
+            ESP_LOGI(TAG, "All tasks finished");
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
+
+    if (!s_stream_task_done) ESP_LOGW(TAG, "stream task still running");
+    if (!s_play_task_done) ESP_LOGW(TAG, "play task still running");
 
     pcm_ring_deinit();
     radio_i2s_stop();
     es8388_stop();
+    ESP_LOGI(TAG, "run_radio: done");
 }
 
 #ifdef RADIO_BEEP_TEST_ENABLED
