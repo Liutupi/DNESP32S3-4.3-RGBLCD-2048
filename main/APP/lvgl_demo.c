@@ -152,21 +152,6 @@ lv_indev_t *lv_port_indev_init(void)
     /* 在LVGL中注册驱动程序，并保存创建的输入设备对象 */
     lv_indev_t * indev = lv_indev_drv_register(&indev_drv);
 
-    /* 调试光标已禁用（正式版本不需要红点和调试标签）
-    lv_obj_t * cursor_obj = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(cursor_obj, 20, 20);
-    lv_obj_set_style_bg_color(cursor_obj, lv_color_hex(0xFF0000), 0);
-    lv_obj_set_style_bg_opa(cursor_obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(cursor_obj, LV_RADIUS_CIRCLE, 0);
-    lv_obj_clear_flag(cursor_obj, LV_OBJ_FLAG_CLICKABLE);
-    lv_indev_set_cursor(indev, cursor_obj);
-
-    debug_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(debug_label, touch_debug_info);
-    lv_obj_set_style_text_color(debug_label, lv_color_hex(0xFF0000), 0);
-    lv_obj_align(debug_label, LV_ALIGN_TOP_LEFT, 10, 10);
-    */
-
     return indev;
 }
 

@@ -12,6 +12,7 @@
 #include "bird_launcher.h"
 #include "photoviewer.h"
 #include "tomato_timer.h"
+#include "racing_game.h"
 #include <stdio.h>
 
 #define SCREEN_W        800
@@ -37,13 +38,14 @@
 #define PHOTO_H         190
 
 #define DOCK_Y          360
-#define DOCK_W          135
+#define DOCK_W          118
 #define DOCK_H           72
 
-#define DOCK_2048_X      92
-#define DOCK_BIRD_X     252
-#define DOCK_REACT_X    412
-#define DOCK_TOMATO_X   572
+#define DOCK_2048_X      66
+#define DOCK_BIRD_X     210
+#define DOCK_REACT_X    354
+#define DOCK_TOMATO_X   498
+#define DOCK_RACING_X   642
 
 #define TAP_MOVE_MAX     30
 
@@ -54,6 +56,7 @@ typedef enum {
     APP_BIRD,
     APP_PHOTO,
     APP_TOMATO,
+    APP_RACING,
 } menu_app_t;
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -64,6 +67,7 @@ static lv_obj_t *g_2048_card = NULL;
 static lv_obj_t *g_bird_card = NULL;
 static lv_obj_t *g_react_card = NULL;
 static lv_obj_t *g_tomato_card = NULL;
+static lv_obj_t *g_racing_card = NULL;
 static lv_coord_t g_press_x = 0;
 static lv_coord_t g_press_y = 0;
 static menu_app_t g_pressed_app = APP_NONE;
@@ -218,6 +222,7 @@ static void create_dock(lv_obj_t *parent)
     g_bird_card = create_dock_card(parent, DOCK_BIRD_X, "Bird", "Launch", COL_ACCENT);
     g_react_card = create_dock_card(parent, DOCK_REACT_X, "Reaction", "Tap test", COL_ACCENT_2);
     g_tomato_card = create_dock_card(parent, DOCK_TOMATO_X, "Tomato", "25:00", COL_ACCENT_2);
+    g_racing_card = create_dock_card(parent, DOCK_RACING_X, "Racing", "Road rush", COL_ACCENT);
 }
 
 static lv_obj_t *create_footer(lv_obj_t *parent)
@@ -260,6 +265,11 @@ static menu_app_t hit_test(lv_coord_t x, lv_coord_t y)
         return APP_TOMATO;
     }
 
+    if (x >= DOCK_RACING_X && x <= DOCK_RACING_X + DOCK_W &&
+        y >= DOCK_Y && y <= DOCK_Y + DOCK_H) {
+        return APP_RACING;
+    }
+
     return APP_NONE;
 }
 
@@ -271,6 +281,7 @@ static lv_obj_t *card_for_app(menu_app_t app)
         case APP_BIRD: return g_bird_card;
         case APP_REACTION: return g_react_card;
         case APP_TOMATO: return g_tomato_card;
+        case APP_RACING: return g_racing_card;
         default: return NULL;
     }
 }
@@ -301,6 +312,9 @@ static void launch_app(menu_app_t app)
             break;
         case APP_TOMATO:
             tomato_timer_start();
+            break;
+        case APP_RACING:
+            racing_game_start();
             break;
         default:
             break;
@@ -394,6 +408,7 @@ void menu_start(void)
     fade_in_obj(g_bird_card, 600, 280);
     fade_in_obj(g_react_card, 700, 280);
     fade_in_obj(g_tomato_card, 800, 280);
+    fade_in_obj(g_racing_card, 900, 280);
     fade_in_obj(footer, 760, 240);
 
     lv_timer_t *ready_timer = lv_timer_create(menu_ready_timer_cb, 1000, NULL);

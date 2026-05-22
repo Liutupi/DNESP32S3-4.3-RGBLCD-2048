@@ -7,6 +7,7 @@ idf_component_register(
         "APP/lvgl_demo.c"
         "APP/menu.c"
         "APP/photoviewer.c"
+        "APP/racing_game.c"
         "APP/reaction_test.c"
         "APP/tjpgd.c"
         "APP/tomato_timer.c"
