@@ -104,7 +104,17 @@ esp_lcd_panel_handle_t rgblcd_init(void)
         .bounce_buffer_size_px = (rgbdev.id == 0X4384) ? 800 * 10 : 272 * 10,  /* 解决写spiflash时,抖动问题 */
     };
 
-    esp_lcd_new_rgb_panel(&panel_config, &panel_handle);/* 创建RGB对象 */
+    ESP_LOGI("RGBLCD", "Create RGB panel id=0x%04x, %ux%u, num_fbs=%d",
+             rgbdev.id, (unsigned)rgbdev.pwidth, (unsigned)rgbdev.pheight, panel_config.num_fbs);
+
+    esp_err_t ret = esp_lcd_new_rgb_panel(&panel_config, &panel_handle);/* 创建RGB对象 */
+    if (ret != ESP_OK) {
+        ESP_LOGE("RGBLCD", "esp_lcd_new_rgb_panel failed: %s", esp_err_to_name(ret));
+        ESP_LOGE("RGBLCD", "free internal=%u, free psram=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return NULL;
+    }
  
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle)); /* 复位RGB屏 */
     

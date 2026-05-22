@@ -8,6 +8,7 @@ idf_component_register(
         "APP/menu.c"
         "APP/photoviewer.c"
         "APP/racing_game.c"
+        "APP/radio_headless_test.c"
         "APP/reaction_test.c"
         "APP/tjpgd.c"
         "APP/tomato_timer.c"
@@ -24,5 +25,8 @@ idf_component_register(
         esp-tls
         mbedtls
         nvs_flash
+        esp_driver_i2s
+        esp_driver_gpio
+        esp_driver_i2c
         json
         lwip)

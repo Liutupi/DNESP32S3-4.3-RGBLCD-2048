@@ -24,9 +24,19 @@
 #include "lcd.h"
 #include "touch.h"
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "lvgl.h"
 #include "demos/lv_demos.h"
 
+static const char *TAG = "LVGL_DEMO";
+static esp_timer_handle_t s_lvgl_tick_timer = NULL;
+static lv_disp_draw_buf_t s_disp_buf;
+static lv_disp_drv_t s_disp_drv;
+static lv_disp_t *s_disp = NULL;
+static bool s_lvgl_suspended = false;
+
+static void increase_lvgl_tick(void *arg);
+static void lvgl_disp_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
 
 /**
  * @brief       lvgl_demo入口函数
@@ -44,16 +54,17 @@ void lvgl_demo(void)
         .callback = &increase_lvgl_tick,    /* 设置定时器回调 */
         .name = "lvgl_tick"                 /* 定时器名称 */
     };
-    esp_timer_handle_t lvgl_tick_timer = NULL;
-    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));     /* 创建定时器 */
-    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, 1 * 1000));           /* 启动定时器 */
+    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &s_lvgl_tick_timer));   /* 创建定时器 */
+    ESP_ERROR_CHECK(esp_timer_start_periodic(s_lvgl_tick_timer, 1 * 1000));         /* 启动定时器 */
 
     /* 还原为主菜单原生入口 */
     menu_start();
 
     while (1)
     {
-        lv_timer_handler();             /* LVGL计时器 */
+        if (!s_lvgl_suspended) {
+            lv_timer_handler();         /* LVGL计时器 */
+        }
         vTaskDelay(pdMS_TO_TICKS(10));  /* 延时10毫秒 */
     }
 }
@@ -101,30 +112,87 @@ lv_disp_t *lv_port_disp_init(void)
     size_t draw_buffer_sz = lcddev.width * lcddev.height * sizeof(lv_color_t);          /* 计算绘画缓冲区大小 */
 
     /* 初始化显示缓冲区 */
-    static lv_disp_draw_buf_t disp_buf;                                                 /* 保存显示缓冲区信息的结构体 */
-    lv_disp_draw_buf_init(&disp_buf, lcd_buffer[0], lcd_buffer[1], draw_buffer_sz);     /* 初始化显示缓冲区 */
+    lv_disp_draw_buf_init(&s_disp_buf, lcd_buffer[0], lcd_buffer[1], draw_buffer_sz);   /* 初始化显示缓冲区 */
     
     /* 在LVGL中注册显示设备 */
-    static lv_disp_drv_t disp_drv;      /* 显示设备的描述符(HAL要注册的显示驱动程序、与显示交互并处理与图形相关的结构体、回调函数) */
-    lv_disp_drv_init(&disp_drv);        /* 初始化显示设备 */
+    lv_disp_drv_init(&s_disp_drv);      /* 初始化显示设备 */
     
     /* 设置显示设备的分辨率 
      * 这里为了适配正点原子的多款屏幕，采用了动态获取的方式，
      * 在实际项目中，通常所使用的屏幕大小是固定的，因此可以直接设置为屏幕的大小 
      */
-    disp_drv.hor_res = lcddev.width;                    /* 设置水平分辨率 */
-    disp_drv.ver_res = lcddev.height;                   /* 设置垂直分辨率 */
+    s_disp_drv.hor_res = lcddev.width;                  /* 设置水平分辨率 */
+    s_disp_drv.ver_res = lcddev.height;                 /* 设置垂直分辨率 */
 
     /* 用来将缓冲区的内容复制到显示设备 */
-    disp_drv.flush_cb = lvgl_disp_flush_cb;             /* 设置刷新回调函数 */
+    s_disp_drv.flush_cb = lvgl_disp_flush_cb;           /* 设置刷新回调函数 */
 
     /* 设置显示缓冲区 */
-    disp_drv.draw_buf = &disp_buf;                      /* 设置绘画缓冲区 */
+    s_disp_drv.draw_buf = &s_disp_buf;                  /* 设置绘画缓冲区 */
 
-    disp_drv.user_data = lcddev.lcd_panel_handle;       /* 传递屏幕控制句柄 */
-    disp_drv.full_refresh = 1;                          /* 设置为完全刷新 */
+    s_disp_drv.user_data = lcddev.lcd_panel_handle;     /* 传递屏幕控制句柄 */
+    s_disp_drv.full_refresh = 1;                        /* 设置为完全刷新 */
     /* 注册显示设备 */
-    return lv_disp_drv_register(&disp_drv);                    
+    s_disp = lv_disp_drv_register(&s_disp_drv);
+    return s_disp;                    
+}
+
+void lvgl_demo_suspend(void)
+{
+    if (s_lvgl_suspended) {
+        return;
+    }
+
+    s_lvgl_suspended = true;
+    if (s_lvgl_tick_timer) {
+        esp_err_t ret = esp_timer_stop(s_lvgl_tick_timer);
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "esp_timer_stop failed: %s", esp_err_to_name(ret));
+        }
+    }
+}
+
+void lvgl_demo_resume(void)
+{
+    if (!s_lvgl_suspended) {
+        return;
+    }
+
+    if (s_lvgl_tick_timer) {
+        esp_err_t ret = esp_timer_start_periodic(s_lvgl_tick_timer, 1 * 1000);
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "esp_timer_start_periodic failed: %s", esp_err_to_name(ret));
+        }
+    }
+    s_lvgl_suspended = false;
+}
+
+void lvgl_demo_rebind_display(void)
+{
+    if (!s_disp) {
+        ESP_LOGW(TAG, "No LVGL display to rebind");
+        return;
+    }
+
+    void *lcd_buffer[2] = {0};
+    esp_err_t ret = esp_lcd_rgb_panel_get_frame_buffer(lcddev.lcd_panel_handle, 2, &lcd_buffer[0], &lcd_buffer[1]);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Get RGB frame buffer failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    lv_disp_draw_buf_init(&s_disp_buf, lcd_buffer[0], lcd_buffer[1],
+                          lcddev.width * lcddev.height * sizeof(lv_color_t));
+    s_disp->driver->hor_res = lcddev.width;
+    s_disp->driver->ver_res = lcddev.height;
+    s_disp->driver->draw_buf = &s_disp_buf;
+    s_disp->driver->user_data = lcddev.lcd_panel_handle;
+    lv_disp_drv_update(s_disp, s_disp->driver);
+}
+
+bool lvgl_demo_is_suspended(void)
+{
+    return s_lvgl_suspended;
 }
 
 lv_obj_t * debug_label = NULL;
@@ -167,6 +235,11 @@ lv_indev_t *lv_port_indev_init(void)
 static void lvgl_disp_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
     esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
+
+    if (s_lvgl_suspended || panel_handle == NULL) {
+        lv_disp_flush_ready(drv);
+        return;
+    }
 
     /* 特定区域打点 */
     esp_lcd_panel_draw_bitmap(panel_handle, area->x1, area->y1, area->x2 + 1, area->y2 + 1, color_map);

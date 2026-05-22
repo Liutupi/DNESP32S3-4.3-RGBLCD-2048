@@ -13,6 +13,7 @@
 #include "photoviewer.h"
 #include "tomato_timer.h"
 #include "racing_game.h"
+#include "radio_headless_test.h"
 #include <stdio.h>
 
 #define SCREEN_W        800
@@ -32,10 +33,15 @@
 #define HEADER_X         48
 #define HEADER_Y         32
 
-#define PHOTO_X         120
+#define PHOTO_X          70
 #define PHOTO_Y         135
-#define PHOTO_W         560
+#define PHOTO_W         340
 #define PHOTO_H         190
+
+#define RADIO_X         450
+#define RADIO_Y         135
+#define RADIO_W         280
+#define RADIO_H         190
 
 #define DOCK_Y          360
 #define DOCK_W          118
@@ -57,6 +63,7 @@ typedef enum {
     APP_PHOTO,
     APP_TOMATO,
     APP_RACING,
+    APP_RADIO,
 } menu_app_t;
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -68,6 +75,7 @@ static lv_obj_t *g_bird_card = NULL;
 static lv_obj_t *g_react_card = NULL;
 static lv_obj_t *g_tomato_card = NULL;
 static lv_obj_t *g_racing_card = NULL;
+static lv_obj_t *g_radio_card = NULL;
 static lv_coord_t g_press_x = 0;
 static lv_coord_t g_press_y = 0;
 static menu_app_t g_pressed_app = APP_NONE;
@@ -179,16 +187,40 @@ static lv_obj_t *create_main_photo_card(lv_obj_t *parent)
     lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_border_opa(card, LV_OPA_30, 0);
 
-    create_panel(card, 410, -34, 142, 142, COL_GLOW, LV_OPA_20, 42);
+    create_panel(card, 224, -34, 118, 118, COL_GLOW, LV_OPA_20, 36);
 
-    lv_obj_t *title = create_label(card, "PHOTO LIBRARY", &lv_font_montserrat_28, COL_TEXT);
-    lv_obj_set_pos(title, 42, 48);
+    lv_obj_t *title = create_label(card, "PHOTO", &lv_font_montserrat_28, COL_TEXT);
+    lv_obj_set_pos(title, 34, 48);
 
     lv_obj_t *sub = create_label(card, "Family album from SD card", &lv_font_montserrat_16, COL_TEXT_SOFT);
-    lv_obj_set_pos(sub, 44, 94);
+    lv_obj_set_pos(sub, 36, 94);
 
     lv_obj_t *hint = create_label(card, "Tap to open", &lv_font_montserrat_14, COL_ACCENT);
-    lv_obj_set_pos(hint, 44, 134);
+    lv_obj_set_pos(hint, 36, 134);
+
+    return card;
+}
+
+static lv_obj_t *create_radio_card(lv_obj_t *parent)
+{
+    lv_obj_t *card = create_panel(parent, RADIO_X, RADIO_Y, RADIO_W, RADIO_H, COL_CARD, LV_OPA_COVER, 32);
+    g_radio_card = card;
+
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT_2), 0);
+    lv_obj_set_style_border_opa(card, LV_OPA_30, 0);
+
+    create_panel(card, 186, -26, 94, 94, COL_ACCENT_2, LV_OPA_20, 34);
+    create_panel(card, 28, 30, 10, 10, COL_ACCENT, LV_OPA_COVER, 5);
+
+    lv_obj_t *title = create_label(card, "RADIO", &lv_font_montserrat_28, COL_TEXT);
+    lv_obj_set_pos(title, 34, 56);
+
+    lv_obj_t *sub = create_label(card, "Headless beep test", &lv_font_montserrat_16, COL_TEXT_SOFT);
+    lv_obj_set_pos(sub, 36, 102);
+
+    lv_obj_t *hint = create_label(card, "Tap to test", &lv_font_montserrat_14, COL_ACCENT);
+    lv_obj_set_pos(hint, 36, 140);
 
     return card;
 }
@@ -245,6 +277,11 @@ static menu_app_t hit_test(lv_coord_t x, lv_coord_t y)
         return APP_PHOTO;
     }
 
+    if (x >= RADIO_X && x <= RADIO_X + RADIO_W &&
+        y >= RADIO_Y && y <= RADIO_Y + RADIO_H) {
+        return APP_RADIO;
+    }
+
     if (x >= DOCK_2048_X && x <= DOCK_2048_X + DOCK_W &&
         y >= DOCK_Y && y <= DOCK_Y + DOCK_H) {
         return APP_2048;
@@ -282,6 +319,7 @@ static lv_obj_t *card_for_app(menu_app_t app)
         case APP_REACTION: return g_react_card;
         case APP_TOMATO: return g_tomato_card;
         case APP_RACING: return g_racing_card;
+        case APP_RADIO: return g_radio_card;
         default: return NULL;
     }
 }
@@ -315,6 +353,9 @@ static void launch_app(menu_app_t app)
             break;
         case APP_RACING:
             racing_game_start();
+            break;
+        case APP_RADIO:
+            radio_headless_test_start();
             break;
         default:
             break;
@@ -398,12 +439,14 @@ void menu_start(void)
     create_background(g_menu_root);
     lv_obj_t *header = create_header(g_menu_root);
     lv_obj_t *photo = create_main_photo_card(g_menu_root);
+    lv_obj_t *radio = create_radio_card(g_menu_root);
     create_dock(g_menu_root);
     lv_obj_t *footer = create_footer(g_menu_root);
     create_touch_layer(g_menu_root);
 
     fade_in_obj(header, 0, 400);
     fade_slide_in_obj(photo, 150, PHOTO_Y, 250, 450);
+    fade_slide_in_obj(radio, 150, RADIO_Y, 320, 450);
     fade_in_obj(g_2048_card, 500, 280);
     fade_in_obj(g_bird_card, 600, 280);
     fade_in_obj(g_react_card, 700, 280);

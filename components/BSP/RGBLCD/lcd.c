@@ -103,7 +103,7 @@ IRAM_ATTR static bool lcd_rgb_panel_refresh_done_callback(esp_lcd_panel_handle_t
 void lcd_init(void)
 {
     xl9555_init();
-    lcddev.id = lcd_panelid_read();                             /* 读取RGB LCD面板ID */
+    lcddev.id = 0X4384;                                         /* 4.3寸800*480 RGB屏，避免音频复用脚影响ID读取 */
     lcddev.ctrl.lcd_rst = GPIO_NUM_NC;                          /* 复位管脚 */
     lcddev.ctrl.lcd_bl = GPIO_NUM_NC;                           /* 背光管脚 */
 
@@ -118,6 +118,7 @@ void lcd_init(void)
     LCD_BL(0);      /* 背光关闭 */
 
     lcddev.lcd_panel_handle = rgblcd_init();                    /* 初始化RGB LCD */
+    buffer_sw = 0;
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(lcddev.lcd_panel_handle, 2, &lcd_buffer[0], &lcd_buffer[1]));
     
     const esp_lcd_rgb_panel_event_callbacks_t rgb_cbs = {
@@ -128,6 +129,33 @@ void lcd_init(void)
     lcd_clear(WHITE);
 
     LCD_BL(1);      /* 打开背光 */
+}
+
+/**
+ * @brief       反初始化LCD并释放RGB panel占用的GPIO
+ * @param       无
+ * @retval      ESP_OK:反初始化成功; 其他:失败
+ */
+esp_err_t lcd_deinit(void)
+{
+    if (lcddev.lcd_panel_handle == NULL) {
+        ESP_LOGW("LCD", "RGB LCD panel already deinitialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t ret = esp_lcd_panel_disp_on_off(lcddev.lcd_panel_handle, false);
+    if (ret != ESP_OK) {
+        ESP_LOGW("LCD", "esp_lcd_panel_disp_on_off(false) failed: %s", esp_err_to_name(ret));
+    }
+
+    ret = esp_lcd_panel_del(lcddev.lcd_panel_handle);
+    if (ret == ESP_OK) {
+        lcddev.lcd_panel_handle = NULL;
+        lcd_buffer[0] = NULL;
+        lcd_buffer[1] = NULL;
+    }
+
+    return ret;
 }
 
 /**

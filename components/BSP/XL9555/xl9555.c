@@ -214,13 +214,16 @@ esp_err_t xl9555_init(void)
         ESP_ERROR_CHECK(myiic_init());
     }
 
-    i2c_device_config_t xl9555_i2c_dev_conf = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,  /* 从机地址长度 */
-        .scl_speed_hz    = IIC_SPEED_CLK,       /* 传输速率 */
-        .device_address  = XL9555_ADDR,         /* 从机7位的地址 */
-    };
-    /* I2C总线上添加XL9555设备 */
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &xl9555_i2c_dev_conf, &xl9555_handle));
+    if (xl9555_handle == NULL)
+    {
+        i2c_device_config_t xl9555_i2c_dev_conf = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,  /* 从机地址长度 */
+            .scl_speed_hz    = IIC_SPEED_CLK,       /* 传输速率 */
+            .device_address  = XL9555_ADDR,         /* 从机7位的地址 */
+        };
+        /* I2C总线上添加XL9555设备 */
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &xl9555_i2c_dev_conf, &xl9555_handle));
+    }
 
     /* 输入模式下，中断才有效（读取IO电平） */
     // xl9555_int_init();

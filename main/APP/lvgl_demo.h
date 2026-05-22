@@ -28,8 +28,10 @@
 void lvgl_demo(void);                                                                               /* lvgl_demo入口函数 */
 lv_disp_t *lv_port_disp_init(void);                                                                 /* 初始化并注册显示设备 */
 lv_indev_t *lv_port_indev_init(void);                                                               /* 初始化并注册输入设备 */
+void lvgl_demo_suspend(void);                                                                       /* 暂停LVGL tick/flush */
+void lvgl_demo_resume(void);                                                                        /* 恢复LVGL tick/flush */
+void lvgl_demo_rebind_display(void);                                                                /* RGB LCD恢复后重新绑定显示缓冲 */
+bool lvgl_demo_is_suspended(void);                                                                  /* 查询LVGL是否暂停 */
 void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data);                               /* 图形库的触摸屏读取回调函数 */
-static void increase_lvgl_tick(void *arg);                                                          /* 告诉LVGL运行时间 */
-static void lvgl_disp_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);   /* 将内部缓冲区的内容刷新到显示屏上的特定区域 */
 
 #endif
