@@ -8,7 +8,9 @@ idf_component_register(
         "APP/menu.c"
         "APP/photoviewer.c"
         "APP/racing_game.c"
-        "APP/radio_headless_test.c"
+        "APP/flip_clock.c"
+        "APP/radio_app.c"
+        "APP/radio_player.c"
         "APP/radio_stations.c"
         "APP/reaction_test.c"
         "APP/tjpgd.c"
@@ -24,6 +26,7 @@ idf_component_register(
         esp_http_client
         esp_http_server
         esp-tls
+        esp_audio_codec
         mbedtls
         nvs_flash
         esp_driver_i2s

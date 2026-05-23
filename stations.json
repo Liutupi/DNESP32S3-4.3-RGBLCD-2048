@@ -1,126 +1,62 @@
 {
   "stations": [
     {
-      "name": "CNR中国之声",
-      "category": "新闻",
+      "name": "CNR China Voice",
+      "category": "News",
       "url": "https://lhttp.qtfm.cn/live/15318317/64k.mp3",
       "fallback_urls": ["https://lhttp-hw.qtfm.cn/live/15318317/64k.mp3"],
-      "type": "mp3",
+      "codec_hint": "mp3",
       "enabled": true
     },
     {
-      "name": "广州新闻资讯",
-      "category": "广东",
+      "name": "Guangzhou News",
+      "category": "Guangdong",
       "url": "http://lhttp.qingting.fm/live/4848/64k.mp3",
       "fallback_urls": ["https://lhttp.qtfm.cn/live/4848/64k.mp3"],
-      "type": "mp3",
+      "codec_hint": "mp3",
       "enabled": true
     },
     {
-      "name": "广州交通经济",
-      "category": "交通",
+      "name": "Guangzhou Traffic",
+      "category": "Traffic",
       "url": "http://lhttp.qingting.fm/live/4955/64k.mp3",
       "fallback_urls": ["https://lhttp.qtfm.cn/live/4955/64k.mp3"],
-      "type": "mp3",
+      "codec_hint": "mp3",
       "enabled": true
     },
     {
-      "name": "珠江经济电台",
-      "category": "广东",
+      "name": "Pearl River Economic Radio",
+      "category": "Guangdong",
       "url": "http://lhttp.qingting.fm/live/1259/64k.mp3",
       "fallback_urls": ["https://lhttp.qtfm.cn/live/1259/64k.mp3"],
-      "type": "mp3",
+      "codec_hint": "mp3",
       "enabled": true
     },
     {
-      "name": "广东音乐之声",
-      "category": "华语音乐",
+      "name": "Guangdong Music",
+      "category": "Chinese Music",
       "url": "http://lhttp.qingting.fm/live/1260/64k.mp3",
       "fallback_urls": ["https://lhttp.qtfm.cn/live/1260/64k.mp3"],
-      "type": "mp3",
+      "codec_hint": "mp3",
       "enabled": true
     },
     {
-      "name": "广东文体广播",
-      "category": "广东",
-      "url": "https://lhttp.qtfm.cn/live/471/64k.mp3",
-      "fallback_urls": ["https://lhttp-hw.qtfm.cn/live/471/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "深圳飞扬971",
-      "category": "广东",
-      "url": "http://lhttp.qingting.fm/live/1271/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/1271/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "亚洲粤语",
-      "category": "华语音乐",
-      "url": "https://lhttp.qingting.fm/live/15318569/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/15318569/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "500首华语经典",
-      "category": "华语音乐",
+      "name": "Chinese Classics 500",
+      "category": "Chinese Music",
       "url": "https://lhttp.qtfm.cn/live/5022308/64k.mp3",
       "fallback_urls": [
         "https://lhttp-hw.qtfm.cn/live/5022308/64k.mp3",
         "http://lhttp.qingting.fm/live/5022308/64k.mp3"
       ],
-      "type": "mp3",
+      "codec_hint": "mp3",
       "enabled": true
     },
     {
-      "name": "清晨音乐台",
-      "category": "华语音乐",
-      "url": "http://lhttp.qingting.fm/live/4915/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/4915/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "怀旧好声音",
-      "category": "华语音乐",
-      "url": "http://lhttp.qingting.fm/live/1223/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/1223/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "959年代音乐",
-      "category": "华语音乐",
-      "url": "http://lhttp.qingting.fm/live/5021381/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/5021381/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "动听音乐台",
-      "category": "华语音乐",
-      "url": "http://lhttp.qingting.fm/live/5022107/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/5022107/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "江苏经典流行音乐",
-      "category": "华语音乐",
-      "url": "http://lhttp.qingting.fm/live/4938/64k.mp3",
-      "fallback_urls": ["https://lhttp.qtfm.cn/live/4938/64k.mp3"],
-      "type": "mp3",
-      "enabled": true
-    },
-    {
-      "name": "HLS示例-禁用",
-      "category": "新闻",
+      "name": "CNR HLS Example",
+      "category": "News",
       "url": "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8",
       "fallback_urls": [],
-      "type": "hls",
+      "codec_hint": "hls",
       "enabled": false
     }
   ]

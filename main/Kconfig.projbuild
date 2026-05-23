@@ -26,3 +26,38 @@ config TOMATO_QWEATHER_LOCATION
         QWeather location ID or longitude,latitude. Default is Zhongshan Nanlang.
 
 endmenu
+
+menu "Network Radio"
+
+config RADIO_EXTERNAL_I2S_DAC
+    bool "Enable external I2S DAC for Radio"
+    default n
+    help
+        Enable this only after wiring an external I2S DAC to free GPIOs.
+        The onboard ES8388 path conflicts with the 4.3 inch RGB LCD pins.
+
+config RADIO_I2S_BCLK_GPIO
+    int "Radio external I2S BCLK GPIO"
+    range 0 48
+    default 35
+    depends on RADIO_EXTERNAL_I2S_DAC
+
+config RADIO_I2S_LRCK_GPIO
+    int "Radio external I2S LRCK/WS GPIO"
+    range 0 48
+    default 36
+    depends on RADIO_EXTERNAL_I2S_DAC
+
+config RADIO_I2S_DOUT_GPIO
+    int "Radio external I2S DOUT GPIO"
+    range 0 48
+    default 37
+    depends on RADIO_EXTERNAL_I2S_DAC
+
+config RADIO_I2S_MCLK_GPIO
+    int "Radio external I2S MCLK GPIO (-1 disabled)"
+    range -1 48
+    default -1
+    depends on RADIO_EXTERNAL_I2S_DAC
+
+endmenu

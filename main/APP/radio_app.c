@@ -1,6 +1,7 @@
 #include "radio_app.h"
 
 #include "menu.h"
+#include "radio_player.h"
 
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
@@ -48,7 +49,8 @@ typedef enum {
     RADIO_STATUS_CONNECTING,
     RADIO_STATUS_PROBING,
     RADIO_STATUS_READY,
-    RADIO_STATUS_PLAYING_UNAVAILABLE,
+    RADIO_STATUS_PLAYING,
+    RADIO_STATUS_FAILED,
     RADIO_STATUS_SOURCE_FAILED,
     RADIO_STATUS_HLS_UNSUPPORTED,
     RADIO_STATUS_AUDIO_UNAVAILABLE,
@@ -65,6 +67,8 @@ typedef struct {
     char name[MAX_TEXT];
     char category[MAX_TEXT];
     char urls[MAX_URLS][MAX_URL];
+    char codec_hint[16];
+    bool enabled;
     radio_stream_type_t type;
 } radio_station_t;
 
@@ -74,6 +78,8 @@ typedef struct {
     int status_code;
     int64_t content_length;
     char content_type[64];
+    char first_magic[64];
+    char final_url[MAX_URL];
     bool ok;
     bool skipped;
     bool hls;
@@ -89,6 +95,7 @@ static const char *USER_AGENT = "DNESP32S3-RGBLCD-Radio/1.0";
 static const char *REMOTE_STATIONS_URL =
     "https://raw.githubusercontent.com/Liutupi/DNESP32S3-4.3-RGBLCD-2048/main/stations.json";
 
+#if 0
 static const builtin_station_t k_builtin_stations[] = {
     {"Groove Salad / SomaFM", "英文", {"https://ice5.somafm.com/groovesalad-128-mp3", "https://ice6.somafm.com/groovesalad-128-mp3", NULL}, RADIO_STREAM_MP3},
     {"CNR中国之声", "新闻", {"https://lhttp.qtfm.cn/live/15318317/64k.mp3", "https://lhttp-hw.qtfm.cn/live/15318317/64k.mp3", NULL}, RADIO_STREAM_MP3},
@@ -106,6 +113,27 @@ static const builtin_station_t k_builtin_stations[] = {
     {"动听音乐台", "华语音乐", {"http://lhttp.qingting.fm/live/5022107/64k.mp3", "https://lhttp.qtfm.cn/live/5022107/64k.mp3", NULL}, RADIO_STREAM_MP3},
     {"江苏经典流行音乐", "华语音乐", {"http://lhttp.qingting.fm/live/4938/64k.mp3", "https://lhttp.qtfm.cn/live/4938/64k.mp3", NULL}, RADIO_STREAM_MP3},
     {"HLS示例-禁用", "新闻", {"https://ngcdn001.cnr.cn/live/zgzs/index.m3u8", NULL, NULL}, RADIO_STREAM_HLS},
+};
+
+#endif
+
+static const builtin_station_t k_builtin_stations[] = {
+    {"Groove Salad / SomaFM", "English", {"https://ice5.somafm.com/groovesalad-128-mp3", "https://ice6.somafm.com/groovesalad-128-mp3", NULL}, RADIO_STREAM_MP3},
+    {"CNR China Voice", "News", {"https://lhttp.qtfm.cn/live/15318317/64k.mp3", "https://lhttp-hw.qtfm.cn/live/15318317/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Guangzhou News", "Guangdong", {"http://lhttp.qingting.fm/live/4848/64k.mp3", "https://lhttp.qtfm.cn/live/4848/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Guangzhou Traffic", "Traffic", {"http://lhttp.qingting.fm/live/4955/64k.mp3", "https://lhttp.qtfm.cn/live/4955/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Pearl River Economic Radio", "Guangdong", {"http://lhttp.qingting.fm/live/1259/64k.mp3", "https://lhttp.qtfm.cn/live/1259/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Guangdong Music", "Chinese Music", {"http://lhttp.qingting.fm/live/1260/64k.mp3", "https://lhttp.qtfm.cn/live/1260/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Guangdong Sports Radio", "Guangdong", {"https://lhttp.qtfm.cn/live/471/64k.mp3", "https://lhttp-hw.qtfm.cn/live/471/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Shenzhen FM971", "Guangdong", {"http://lhttp.qingting.fm/live/1271/64k.mp3", "https://lhttp.qtfm.cn/live/1271/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Asia Cantonese", "Chinese Music", {"https://lhttp.qingting.fm/live/15318569/64k.mp3", "https://lhttp.qtfm.cn/live/15318569/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Chinese Classics 500", "Chinese Music", {"https://lhttp.qtfm.cn/live/5022308/64k.mp3", "https://lhttp-hw.qtfm.cn/live/5022308/64k.mp3", "http://lhttp.qingting.fm/live/5022308/64k.mp3"}, RADIO_STREAM_MP3},
+    {"Morning Music", "Chinese Music", {"http://lhttp.qingting.fm/live/4915/64k.mp3", "https://lhttp.qtfm.cn/live/4915/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Nostalgic Voices", "Chinese Music", {"http://lhttp.qingting.fm/live/1223/64k.mp3", "https://lhttp.qtfm.cn/live/1223/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"959 Era Music", "Chinese Music", {"http://lhttp.qingting.fm/live/5021381/64k.mp3", "https://lhttp.qtfm.cn/live/5021381/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Touching Music", "Chinese Music", {"http://lhttp.qingting.fm/live/5022107/64k.mp3", "https://lhttp.qtfm.cn/live/5022107/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"Jiangsu Classic Pop", "Chinese Music", {"http://lhttp.qingting.fm/live/4938/64k.mp3", "https://lhttp.qtfm.cn/live/4938/64k.mp3", NULL}, RADIO_STREAM_MP3},
+    {"HLS Example Disabled", "News", {"https://ngcdn001.cnr.cn/live/zgzs/index.m3u8", NULL, NULL}, RADIO_STREAM_HLS},
 };
 
 static radio_station_t g_stations[MAX_STATIONS];
@@ -132,34 +160,12 @@ static lv_obj_t *g_remote_label;
 static lv_obj_t *g_touch_layer;
 static lv_coord_t g_press_x;
 static lv_coord_t g_press_y;
+static char g_player_message[160];
 
 static bool wifi_is_connected(void)
 {
     wifi_ap_record_t ap;
     return esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
-}
-
-bool radio_audio_available(void)
-{
-    return false;
-}
-
-bool radio_audio_start(const char *url)
-{
-    (void)url;
-    ESP_LOGW(TAG, "Audio unavailable on RGB LCD build; ES8388 I2S pins conflict with RGB LCD");
-    return false;
-}
-
-size_t radio_audio_write_pcm(const int16_t *samples, size_t sample_count)
-{
-    (void)samples;
-    (void)sample_count;
-    return 0;
-}
-
-void radio_audio_stop(void)
-{
 }
 
 static const char *status_text(radio_status_t status)
@@ -169,7 +175,8 @@ static const char *status_text(radio_status_t status)
         case RADIO_STATUS_CONNECTING: return "Connecting";
         case RADIO_STATUS_PROBING: return "Probing";
         case RADIO_STATUS_READY: return "Ready";
-        case RADIO_STATUS_PLAYING_UNAVAILABLE: return "Playing unavailable";
+        case RADIO_STATUS_PLAYING: return "Playing";
+        case RADIO_STATUS_FAILED: return "Failed";
         case RADIO_STATUS_SOURCE_FAILED: return "Source failed";
         case RADIO_STATUS_HLS_UNSUPPORTED: return "HLS unsupported";
         case RADIO_STATUS_AUDIO_UNAVAILABLE: return "Audio unavailable";
@@ -228,13 +235,46 @@ static bool url_looks_hls(const char *url)
 
 static bool content_type_allowed(const char *content_type)
 {
-    if (!content_type || !content_type[0]) {
-        ESP_LOGW(TAG, "probe content-type missing; allowing for MP3 probe");
-        return true;
+    char lower[96];
+    strtolower_copy(lower, sizeof(lower), content_type ? content_type : "");
+    return strstr(lower, "audio/mpeg") ||
+           strstr(lower, "audio/mp3") ||
+           strstr(lower, "audio/aac") ||
+           strstr(lower, "audio/aacp") ||
+           strstr(lower, "application/octet-stream");
+}
+
+static bool content_type_rejected(const char *content_type)
+{
+    char lower[96];
+    strtolower_copy(lower, sizeof(lower), content_type ? content_type : "");
+    return strstr(lower, "text/html") ||
+           strstr(lower, "application/json") ||
+           strstr(lower, "mpegurl") ||
+           strstr(lower, "text/plain");
+}
+
+static bool bytes_look_like_audio(const uint8_t *bytes, int len)
+{
+    if (!bytes || len < 2) return false;
+    if (len >= 3 && bytes[0] == 'I' && bytes[1] == 'D' && bytes[2] == '3') return true;
+    for (int i = 0; i + 1 < len; ++i) {
+        if (bytes[i] == 0xFF && (bytes[i + 1] & 0xE0) == 0xE0) return true;
     }
-    return strstr(content_type, "audio/mpeg") ||
-           strstr(content_type, "audio/mp3") ||
-           strstr(content_type, "application/octet-stream");
+    if (len >= 4 && memcmp(bytes, "ADIF", 4) == 0) return true;
+    return false;
+}
+
+static void bytes_to_hex(const uint8_t *bytes, int len, char *out, size_t out_size)
+{
+    size_t used = 0;
+    if (!out || out_size == 0) return;
+    out[0] = '\0';
+    for (int i = 0; bytes && i < len && used + 4 < out_size; ++i) {
+        int wrote = snprintf(out + used, out_size - used, "%s%02X", i ? " " : "", bytes[i]);
+        if (wrote <= 0) break;
+        used += (size_t)wrote;
+    }
 }
 
 static bool station_duplicate(const char *name, const char *url)
@@ -264,6 +304,9 @@ static bool append_station(const char *name, const char *category, const char * 
     copy_text(station->name, sizeof(station->name), name);
     copy_text(station->category, sizeof(station->category), category ? category : "电台");
     station->type = type;
+    station->enabled = true;
+    copy_text(station->codec_hint, sizeof(station->codec_hint),
+              type == RADIO_STREAM_MP3 ? "mp3" : "hls");
     for (int i = 0; i < MAX_URLS; ++i) {
         copy_text(station->urls[i], sizeof(station->urls[i]), urls[i]);
     }
@@ -298,6 +341,7 @@ static bool append_json_station(const cJSON *item)
     const cJSON *category = cJSON_GetObjectItem(item, "category");
     const cJSON *url = cJSON_GetObjectItem(item, "url");
     const cJSON *type = cJSON_GetObjectItem(item, "type");
+    const cJSON *codec_hint = cJSON_GetObjectItem(item, "codec_hint");
     const char *urls[MAX_URLS] = {0};
     int out = 0;
 
@@ -305,8 +349,9 @@ static bool append_json_station(const cJSON *item)
     if (cJSON_IsBool(enabled) && !cJSON_IsTrue(enabled)) return false;
     if (!cJSON_IsString(name) || !cJSON_IsString(url)) return false;
 
-    radio_stream_type_t stream_type = parse_stream_type(cJSON_IsString(type) ? type->valuestring : NULL,
-                                                        url->valuestring);
+    const char *hint = cJSON_IsString(codec_hint) ? codec_hint->valuestring :
+                       (cJSON_IsString(type) ? type->valuestring : NULL);
+    radio_stream_type_t stream_type = parse_stream_type(hint, url->valuestring);
     if (stream_type != RADIO_STREAM_MP3 || !url_looks_playable_mp3(url->valuestring)) {
         ESP_LOGW(TAG, "Skip unsupported station from JSON: name=%s url=%s",
                  name->valuestring, url->valuestring);
@@ -325,9 +370,14 @@ static bool append_json_station(const cJSON *item)
         }
     }
 
-    return append_station(name->valuestring,
-                          cJSON_IsString(category) ? category->valuestring : "电台",
-                          urls, stream_type);
+    bool ok = append_station(name->valuestring,
+                             cJSON_IsString(category) ? category->valuestring : "Radio",
+                             urls, stream_type);
+    if (ok && hint) {
+        copy_text(g_stations[g_station_count - 1].codec_hint,
+                  sizeof(g_stations[g_station_count - 1].codec_hint), hint);
+    }
+    return ok;
 }
 
 static bool download_text(const char *url, char **out_text, int *out_len)
@@ -456,10 +506,11 @@ static void update_ui(void)
     label_set(g_status_label, status_text(g_status));
 
     if (g_last_probe.status_code > 0 || g_last_probe.skipped) {
-        snprintf(buf, sizeof(buf), "HTTP %d   content-type: %s   length: %lld",
+        snprintf(buf, sizeof(buf), "HTTP %d   type: %s   len: %lld   magic: %s",
                  g_last_probe.status_code,
                  g_last_probe.content_type[0] ? g_last_probe.content_type : "(none)",
-                 (long long)g_last_probe.content_length);
+                 (long long)g_last_probe.content_length,
+                 g_last_probe.first_magic[0] ? g_last_probe.first_magic : "--");
     } else {
         snprintf(buf, sizeof(buf), "HTTP --   content-type: --   length: --");
     }
@@ -468,12 +519,14 @@ static void update_ui(void)
     snprintf(buf, sizeof(buf), "%s", station->urls[g_url_index][0] ? station->urls[g_url_index] : "(no URL)");
     label_set(g_url_label, buf);
 
-    if (radio_audio_available()) {
+    if ((g_status == RADIO_STATUS_FAILED || g_status == RADIO_STATUS_PLAYING) && g_player_message[0]) {
+        label_set(g_audio_label, g_player_message);
+    } else if (radio_player_audio_available()) {
         label_set(g_audio_label, "Audio output available");
     } else if (g_last_probe.ok) {
         label_set(g_audio_label, "Stream OK, audio unavailable on RGB LCD build");
     } else {
-        label_set(g_audio_label, "Audio unavailable on RGB LCD build");
+        label_set(g_audio_label, radio_player_audio_unavailable_reason());
     }
 
     snprintf(buf, sizeof(buf), "%s%s",
@@ -483,8 +536,9 @@ static void update_ui(void)
     label_set(g_remote_label, buf);
 
     lv_obj_set_style_text_color(g_status_label,
-                                lv_color_hex(g_last_probe.ok ? COL_OK :
+                                lv_color_hex((g_status == RADIO_STATUS_PLAYING || g_last_probe.ok) ? COL_OK :
                                              (g_status == RADIO_STATUS_SOURCE_FAILED ||
+                                              g_status == RADIO_STATUS_FAILED ||
                                               g_status == RADIO_STATUS_HLS_UNSUPPORTED ||
                                               g_status == RADIO_STATUS_WIFI_OFFLINE ? COL_BAD : COL_WARN)),
                                 0);
@@ -543,14 +597,27 @@ static probe_result_t probe_url(const radio_station_t *station, const char *url,
         if (esp_http_client_get_header(client, "Content-Type", &content_type) == ESP_OK && content_type) {
             copy_text(result.content_type, sizeof(result.content_type), content_type);
         }
+        esp_http_client_get_url(client, result.final_url, sizeof(result.final_url));
+        uint8_t first[512] = {0};
+        int first_len = esp_http_client_read(client, (char *)first, sizeof(first));
+        if (first_len > 0) {
+            bytes_to_hex(first, first_len < 16 ? first_len : 16, result.first_magic, sizeof(result.first_magic));
+        }
         result.ok = result.status_code >= 200 && result.status_code < 400 &&
-                    content_type_allowed(result.content_type);
-        ESP_LOGI(TAG, "probe station=%d/%d name=%s category=%s url_index=%d selected_url=%s "
-                      "using_fallback=%s HTTP status=%d content-type=%s content-length=%lld ok=%s",
+                    content_type_allowed(result.content_type) &&
+                    !content_type_rejected(result.content_type) &&
+                    bytes_look_like_audio(first, first_len);
+        ESP_LOGI(TAG, "probe station=%d/%d name=%s category=%s url_index=%d original_url=%s "
+                      "final_url=%s using_fallback=%s HTTP status=%d content-type=%s "
+                      "content-length=%lld codec_hint=%s first bytes magic=%s ok=%s reason=%s",
                  station_index + 1, station_count, station->name, station->category, url_index + 1, url,
+                 result.final_url[0] ? result.final_url : url,
                  url_index > 0 ? "yes" : "no", result.status_code,
                  result.content_type[0] ? result.content_type : "(none)",
-                 (long long)result.content_length, result.ok ? "yes" : "no");
+                 (long long)result.content_length, station->codec_hint,
+                 result.first_magic[0] ? result.first_magic : "(none)",
+                 result.ok ? "yes" : "no",
+                 result.ok ? "direct audio stream" : "not direct audio stream");
     } else {
         ESP_LOGW(TAG, "probe open failed station=%d/%d name=%s category=%s url_index=%d url=%s err=%s",
                  station_index + 1, station_count, station->name, station->category, url_index + 1, url,
@@ -608,7 +675,7 @@ static void probe_task(void *arg)
             }
         }
         if (found) {
-            g_status = radio_audio_available() ? RADIO_STATUS_READY : RADIO_STATUS_AUDIO_UNAVAILABLE;
+            g_status = radio_player_audio_available() ? RADIO_STATUS_READY : RADIO_STATUS_AUDIO_UNAVAILABLE;
         } else if (g_status != RADIO_STATUS_HLS_UNSUPPORTED) {
             g_status = RADIO_STATUS_SOURCE_FAILED;
         }
@@ -621,7 +688,7 @@ static void probe_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static void start_probe(void)
+static void __attribute__((unused)) start_probe(void)
 {
     if (g_probe_busy) return;
     memset(&g_last_probe, 0, sizeof(g_last_probe));
@@ -635,9 +702,84 @@ static void start_probe(void)
     }
 }
 
+static void player_ui_async(void *arg)
+{
+    (void)arg;
+    update_ui();
+}
+
+static void player_status_cb(radio_player_state_t state, const char *message, void *user_ctx)
+{
+    (void)user_ctx;
+    copy_text(g_player_message, sizeof(g_player_message), message ? message : "");
+    switch (state) {
+        case RADIO_PLAYER_CONNECTING:
+            g_status = RADIO_STATUS_CONNECTING;
+            break;
+        case RADIO_PLAYER_PLAYING:
+            g_status = RADIO_STATUS_PLAYING;
+            break;
+        case RADIO_PLAYER_FAILED:
+            g_status = RADIO_STATUS_FAILED;
+            break;
+        case RADIO_PLAYER_STOPPED:
+            g_status = RADIO_STATUS_READY;
+            break;
+        default:
+            break;
+    }
+    if (g_screen) {
+        lv_async_call(player_ui_async, NULL);
+    }
+}
+
+static void start_playback(void)
+{
+    radio_station_t *station = current_station();
+    if (!station) return;
+
+    radio_player_stop();
+    g_status = RADIO_STATUS_CONNECTING;
+    copy_text(g_player_message, sizeof(g_player_message), "Connecting");
+    update_ui();
+
+    radio_player_request_t req = {
+        .name = station->name,
+        .url = station->urls[g_url_index][0] ? station->urls[g_url_index] : station->urls[0],
+        .codec_hint = station->codec_hint,
+        .status_cb = player_status_cb,
+        .user_ctx = NULL,
+    };
+    int fallback_out = 0;
+    for (int i = 0; i < MAX_URLS && fallback_out < 2; ++i) {
+        if (i == g_url_index || !station->urls[i][0]) continue;
+        req.fallback_urls[fallback_out++] = station->urls[i];
+    }
+    req.fallback_count = fallback_out;
+    if (!radio_player_play(&req)) {
+        g_status = RADIO_STATUS_FAILED;
+        copy_text(g_player_message, sizeof(g_player_message), "RADIO: player task create failed");
+        update_ui();
+    }
+}
+
+static void start_beep_test(void)
+{
+    radio_player_stop();
+    g_status = RADIO_STATUS_CONNECTING;
+    copy_text(g_player_message, sizeof(g_player_message), "Testing 440Hz beep");
+    update_ui();
+    if (!radio_player_test_beep(player_status_cb, NULL)) {
+        g_status = RADIO_STATUS_FAILED;
+        copy_text(g_player_message, sizeof(g_player_message), radio_player_audio_unavailable_reason());
+        update_ui();
+    }
+}
+
 static void switch_station(int delta)
 {
     if (g_station_count <= 0) return;
+    radio_player_stop();
     g_station_index = (g_station_index + delta + g_station_count) % g_station_count;
     g_url_index = 0;
     memset(&g_last_probe, 0, sizeof(g_last_probe));
@@ -680,6 +822,7 @@ static void back_cb(lv_event_t *e)
 {
     (void)e;
     g_generation++;
+    radio_player_stop();
     g_screen = NULL;
     menu_go_back();
 }
@@ -744,8 +887,10 @@ static void touch_cb(lv_event_t *e)
         switch_station(-1);
     } else if (p.x > 550) {
         switch_station(1);
+    } else if (p.y > 380) {
+        start_beep_test();
     } else {
-        start_probe();
+        start_playback();
     }
 }
 
@@ -754,6 +899,7 @@ void radio_app_start(void)
     g_generation++;
     load_builtin_stations();
     memset(&g_last_probe, 0, sizeof(g_last_probe));
+    memset(g_player_message, 0, sizeof(g_player_message));
     g_status = wifi_is_connected() ? RADIO_STATUS_CONNECTING : RADIO_STATUS_WIFI_OFFLINE;
     g_probe_busy = false;
     g_remote_attempted = false;
@@ -791,10 +937,10 @@ void radio_app_start(void)
                          COL_TEXT_SOFT, 72, 292, 650);
     g_url_label = label(g_screen, "--", &lv_font_montserrat_12, COL_MUTED, 72, 324, 650);
 
-    g_audio_label = label(g_screen, "Audio unavailable on RGB LCD build", &lv_font_montserrat_16,
+    g_audio_label = label(g_screen, radio_player_audio_unavailable_reason(), &lv_font_montserrat_16,
                           COL_BAD, 46, 386, 710);
     g_remote_label = label(g_screen, "WiFi checking", &lv_font_montserrat_12, COL_TEXT_SOFT, 46, 416, 710);
-    label(g_screen, "< left station     center probe / refresh     right station     Back returns",
+    label(g_screen, "< left station     center play     bottom center beep test     right station",
           &lv_font_montserrat_14, COL_TEXT_SOFT, 46, 448, 710);
 
     g_touch_layer = lv_obj_create(g_screen);

@@ -266,6 +266,32 @@ idf.py -p COM10 flash
 | **加 WiFi / 网络** | 代码里直接 `#include "esp_wifi.h"` 调用；如需改配置可用 `idf.py menuconfig` |
 | **换屏幕（SPI 屏）** | 需替换 `components/BSP/RGBLCD/` 相关驱动，建议 copy 正点原子对应屏幕例程的 BSP |
 | **音频（I2S）** | ⚠️ 4.3" RGB LCD 和板载 ES8388 **引脚冲突**，不能同时用。换 SPI 屏后才可用音频 |
+
+### Network Radio audio note
+
+The Radio card now opens the visible Radio page instead of the old headless ES8388 test. In the default 4.3" RGB LCD build it will not initialize onboard ES8388, because GPIO3/GPIO9/GPIO10/GPIO14/GPIO46 are already used by RGB LCD signals. This cannot be fixed in software while keeping the 4.3" RGB LCD active.
+
+To play sound, enable `Network Radio -> Enable external I2S DAC for Radio` in menuconfig and wire an external DAC to the configurable non-conflicting defaults:
+
+| Signal | Default GPIO |
+|--------|--------------|
+| BCLK | GPIO35 |
+| LRCK / WS | GPIO36 |
+| DOUT / DIN on DAC | GPIO37 |
+| MCLK | disabled |
+
+Use the Radio page's bottom-center beep test first. If the beep has no sound, fix the external DAC wiring before debugging station URLs.
+
+Radio debug order:
+
+1. Enable `Network Radio -> Enable external I2S DAC for Radio`.
+2. Wire BCLK GPIO35, LRCK/WS GPIO36, DOUT/DIN GPIO37, GND, and DAC VCC.
+3. Enter Radio and run the bottom-center 440Hz beep test.
+4. Test the built-in English MP3 direct station.
+5. Test a built-in Chinese MP3 direct station such as `CNR China Voice` or `Chinese Classics 500`.
+6. Test remote `stations.json` only after built-in playback works.
+
+Common Radio failures: external DAC disabled, DAC wiring error, station URL returns HTML/JSON instead of audio, HLS/m3u8 unsupported, WiFi offline, TLS certificate trouble, unsupported MP3 stream, or I2S GPIO collision with GPIO3/GPIO9/GPIO10/GPIO14/GPIO46.
 | **改 sdkconfig** | `idf.py menuconfig` 图形化配置，或手动改 `sdkconfig` |
 | **崩溃定位** | 记下串口 `Backtrace:` 地址，执行 `xtensa-esp32s3-elf-addr2line.exe -e build/lvgl.elf <地址>` |
 
