@@ -26,11 +26,13 @@
 #define BOOT_LONG_EXIT_MS 1500
 #define BOOT_POLL_MS 20
 #define RADIO_MAX_FAILED_STATIONS 5
+#define SOMAFM_GROOVE_SALAD_URL "https://ice5.somafm.com/groovesalad-128-mp3"
 
 static volatile bool s_display_released;
 static volatile bool s_player_failed;
 static volatile bool s_player_playing;
 static int s_current_station = -1;
+static char s_last_fail_reason[128] = "unknown";
 
 typedef enum {
     RADIO_LOOP_EXIT_BOOT,
@@ -156,6 +158,10 @@ static void player_status_cb(radio_player_state_t state, const char *message, vo
         s_player_playing = true;
         s_player_failed = false;
     } else if (state == RADIO_PLAYER_FAILED) {
+        const char *reason = message ? strstr(message, "reason=") : NULL;
+        reason = reason ? reason + strlen("reason=") : message;
+        snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s",
+                 (reason && reason[0]) ? reason : "unknown");
         s_player_failed = true;
         s_player_playing = false;
     } else if (state == RADIO_PLAYER_STOPPED) {
@@ -192,6 +198,7 @@ static bool start_station(int index)
     req.fallback_count = fallback_count;
     if (!radio_player_play(&req)) {
         ESP_LOGW(TAG, "RADIO_URL_FAILED reason=player_start_failed station=%s", station->name);
+        snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "player_start_failed");
         s_player_failed = true;
         return false;
     }
@@ -205,6 +212,19 @@ static int next_station_index(void)
         s_current_station = next;
     }
     return next;
+}
+
+static int first_preferred_station_index(void)
+{
+    for (int i = 0; i < radio_stations_count(); ++i) {
+        const radio_station_t *station = radio_stations_get(i);
+        if (station && station->enabled && station->type &&
+            strcmp(station->type, "mp3") == 0 && station->url &&
+            strstr(station->url, SOMAFM_GROOVE_SALAD_URL)) {
+            return i;
+        }
+    }
+    return radio_stations_first_enabled_mp3();
 }
 
 static void stop_audio_path(void)
@@ -295,9 +315,11 @@ static radio_loop_exit_t run_headless_loop(void)
     int failed_stations = 0;
 
     radio_stations_init();
-    s_current_station = radio_stations_first_enabled_mp3();
+    snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "unknown");
+    s_current_station = first_preferred_station_index();
     if (s_current_station < 0) {
         ESP_LOGE(TAG, "RADIO_URL_FAILED reason=no_enabled_mp3_stations");
+        snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "no_enabled_mp3_stations");
         return RADIO_LOOP_EXIT_NO_STATIONS;
     }
     start_station(s_current_station);
@@ -334,7 +356,8 @@ static radio_loop_exit_t run_headless_loop(void)
             failed_stations++;
             ESP_LOGI(TAG, "RADIO_AUTO_NEXT tried=%d", failed_stations);
             if (failed_stations >= RADIO_MAX_FAILED_STATIONS) {
-                ESP_LOGE(TAG, "RADIO_ALL_FAILED tried=%d", failed_stations);
+                ESP_LOGE(TAG, "RADIO_ALL_FAILED tried=%d last_reason=%s",
+                         failed_stations, s_last_fail_reason);
                 return RADIO_LOOP_EXIT_ALL_FAILED;
             }
             int next = next_station_index();
@@ -362,7 +385,11 @@ void radio_headless_start(void)
     }
 
     ESP_LOGI(TAG, "WIFI_CONNECTED_OK");
+#if RADIO_AUDIO_SELF_TEST_ONLY
+    show_message("WiFi OK\nTesting speaker...", 1000);
+#else
     show_message("WiFi OK\nEntering Headless Radio...", 1000);
+#endif
 
     boot_button_init();
 #if RADIO_AUDIO_SELF_TEST_ONLY
@@ -391,8 +418,10 @@ void radio_headless_start(void)
         restore_display(false);
         show_result_screen("Audio test failed", failed_stage);
     } else if (exit_reason == RADIO_LOOP_EXIT_ALL_FAILED) {
+        char detail[176];
+        snprintf(detail, sizeof(detail), "Last reason: %s", s_last_fail_reason);
         restore_display(false);
-        show_result_screen("Radio failed", "Tried 5 stations\nCheck WiFi or stream URLs");
+        show_result_screen("Radio failed", detail);
     } else if (exit_reason == RADIO_LOOP_EXIT_NO_STATIONS) {
         restore_display(false);
         show_result_screen("Radio failed", "No enabled MP3 stations");
