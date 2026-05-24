@@ -1,5 +1,12 @@
 # Radio / Network Radio
 
+Current handoff for the onboard ES8388 headless path:
+`docs/RADIO_HEADLESS_HANDOFF.md`.
+
+Note: older sections in this file describe the previous external-I2S-DAC plan.
+The current active route is onboard ES8388 after the RGB LCD is shut down and
+its conflicting GPIOs are released.
+
 WarmOS now includes a Radio app in the Game Center menu.
 
 ## Current RGB LCD limitation

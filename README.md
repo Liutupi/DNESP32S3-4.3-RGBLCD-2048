@@ -1,5 +1,8 @@
 # DNESP32S3 Game Center
 
+Current onboard ES8388 headless Network Radio handoff:
+`docs/RADIO_HEADLESS_HANDOFF.md`.
+
 基于 **正点原子 DNESP32S3** 开发板的触屏小游戏集合，带分级菜单。
 
 | 项目 | 说明 |
