@@ -19,16 +19,24 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #define TAG "RADIO_HEADLESS"
 #define BOOT_GPIO GPIO_NUM_0
 #define BOOT_LONG_EXIT_MS 1500
 #define BOOT_POLL_MS 20
+#define RADIO_MAX_FAILED_STATIONS 5
 
 static volatile bool s_display_released;
 static volatile bool s_player_failed;
 static volatile bool s_player_playing;
 static int s_current_station = -1;
+
+typedef enum {
+    RADIO_LOOP_EXIT_BOOT,
+    RADIO_LOOP_EXIT_ALL_FAILED,
+    RADIO_LOOP_EXIT_NO_STATIONS,
+} radio_loop_exit_t;
 
 bool radio_headless_display_released(void)
 {
@@ -71,6 +79,49 @@ static void show_message(const char *text, int hold_ms)
 
     pump_lvgl_for_ms(hold_ms);
     lv_obj_del(box);
+    lv_timer_handler();
+}
+
+static void result_touch_cb(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        menu_start();
+    }
+}
+
+static void show_result_screen(const char *title, const char *detail)
+{
+    lv_obj_t *scr = lv_scr_act();
+    lv_obj_clean(scr);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x120C09), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
+    lv_obj_t *root = lv_obj_create(scr);
+    lv_obj_set_size(root, 800, 480);
+    lv_obj_set_pos(root, 0, 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_set_style_pad_all(root, 0, 0);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(root, result_touch_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *title_label = lv_label_create(root);
+    lv_label_set_text(title_label, title);
+    lv_obj_set_width(title_label, 720);
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFF2DC), 0);
+    lv_obj_set_style_text_align(title_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(title_label, LV_ALIGN_CENTER, 0, -42);
+
+    lv_obj_t *detail_label = lv_label_create(root);
+    lv_label_set_text(detail_label, detail ? detail : "");
+    lv_obj_set_width(detail_label, 720);
+    lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(detail_label, lv_color_hex(0xE5B36D), 0);
+    lv_obj_set_style_text_align(detail_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(detail_label, LV_ALIGN_CENTER, 0, 24);
+
     lv_timer_handler();
 }
 
@@ -119,8 +170,9 @@ static bool start_station(int index)
         return false;
     }
 
-    ESP_LOGI(TAG, "RADIO_STATION_SELECT index=%d/%d name=%s",
-             index + 1, radio_stations_count(), station->name);
+    ESP_LOGI(TAG, "RADIO_STATION_SELECT index=%d/%d name=%s category=%s",
+             index + 1, radio_stations_count(), station->name,
+             station->category ? station->category : "");
 
     s_player_failed = false;
     s_player_playing = false;
@@ -158,12 +210,12 @@ static int next_station_index(void)
 static void stop_audio_path(void)
 {
     radio_player_stop();
-    board_audio_i2s_stop();
     board_audio_codec_stop();
     board_audio_speaker_enable(false);
+    board_audio_i2s_stop();
 }
 
-static bool enter_headless_audio(void)
+static bool enter_headless_audio(const char **failed_stage)
 {
     ESP_LOGI(TAG, "HEADLESS_ENTER");
 
@@ -174,7 +226,9 @@ static bool enter_headless_audio(void)
     if (lcd_ret == ESP_OK || lcd_ret == ESP_ERR_INVALID_STATE) {
         ESP_LOGI(TAG, "RGB_PANEL_STOP_OK");
     } else {
-        ESP_LOGW(TAG, "RGB panel stop failed: %s", esp_err_to_name(lcd_ret));
+        ESP_LOGE(TAG, "RGB panel stop failed: %s", esp_err_to_name(lcd_ret));
+        *failed_stage = "RGB panel stop failed";
+        return false;
     }
 
     LCD_BL(0);
@@ -185,24 +239,37 @@ static bool enter_headless_audio(void)
     ESP_LOGI(TAG, "DISPLAY_RELEASED_OK");
 
     if (board_audio_init_i2c_and_expander() != ESP_OK) {
+        *failed_stage = "I2C init failed";
         return false;
     }
-    if (board_audio_speaker_enable(true) != ESP_OK) {
-        return false;
-    }
-    if (board_audio_codec_start(BOARD_AUDIO_VOLUME_DEFAULT) != ESP_OK) {
+    if (board_audio_speaker_enable(false) != ESP_OK) {
+        *failed_stage = "XL9555 init failed";
         return false;
     }
     if (board_audio_i2s_start(BOARD_AUDIO_SAMPLE_RATE_HZ) != ESP_OK) {
+        *failed_stage = "I2S init failed";
         return false;
     }
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    if (board_audio_codec_start(BOARD_AUDIO_VOLUME_DEFAULT) != ESP_OK) {
+        *failed_stage = "ES8388 init failed";
+        return false;
+    }
+    if (board_audio_speaker_enable(true) != ESP_OK) {
+        *failed_stage = "XL9555 speaker enable failed";
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     if (!board_audio_play_beep_440hz_500ms()) {
+        *failed_stage = "Beep write failed";
         return false;
     }
     return true;
 }
 
-static void restore_display(void)
+static void restore_display(bool return_to_menu)
 {
     reset_conflict_gpios();
     s_display_released = false;
@@ -215,20 +282,23 @@ static void restore_display(void)
     ESP_LOGI(TAG, "LVGL_RESUME_OK");
 
     LCD_BL(1);
-    menu_start();
+    if (return_to_menu) {
+        menu_start();
+    }
 }
 
-static void run_headless_loop(void)
+static radio_loop_exit_t run_headless_loop(void)
 {
     bool was_pressed = false;
     bool long_fired = false;
     int64_t press_start_ms = 0;
+    int failed_stations = 0;
 
     radio_stations_init();
     s_current_station = radio_stations_first_enabled_mp3();
     if (s_current_station < 0) {
         ESP_LOGE(TAG, "RADIO_URL_FAILED reason=no_enabled_mp3_stations");
-        return;
+        return RADIO_LOOP_EXIT_NO_STATIONS;
     }
     start_station(s_current_station);
 
@@ -261,7 +331,12 @@ static void run_headless_loop(void)
 
         if (s_player_failed && !radio_player_is_running()) {
             s_player_failed = false;
-            ESP_LOGI(TAG, "RADIO_AUTO_NEXT");
+            failed_stations++;
+            ESP_LOGI(TAG, "RADIO_AUTO_NEXT tried=%d", failed_stations);
+            if (failed_stations >= RADIO_MAX_FAILED_STATIONS) {
+                ESP_LOGE(TAG, "RADIO_ALL_FAILED tried=%d", failed_stations);
+                return RADIO_LOOP_EXIT_ALL_FAILED;
+            }
             int next = next_station_index();
             if (next >= 0) {
                 start_station(next);
@@ -272,26 +347,57 @@ static void run_headless_loop(void)
 
         vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
     }
+
+    return RADIO_LOOP_EXIT_BOOT;
 }
 
 void radio_headless_start(void)
 {
+    show_message("Radio Audio Test\nChecking WiFi...", 600);
+
     if (!wifi_is_connected()) {
         ESP_LOGW(TAG, "WIFI_NOT_CONNECTED");
-        show_message("Please connect WiFi in Tomato Clock first", 1500);
+        show_message("WiFi not connected\nPlease connect WiFi in Tomato Clock first", 2000);
         return;
     }
 
     ESP_LOGI(TAG, "WIFI_CONNECTED_OK");
-    show_message("Entering Headless Radio...", 1500);
+    show_message("WiFi OK\nEntering Headless Radio...", 1000);
 
     boot_button_init();
-    if (enter_headless_audio()) {
-        run_headless_loop();
+#if RADIO_AUDIO_SELF_TEST_ONLY
+    const char *failed_stage = "Unknown";
+    bool beep_ok = enter_headless_audio(&failed_stage);
+    stop_audio_path();
+    restore_display(false);
+    if (beep_ok) {
+        show_result_screen("Beep OK", "Speaker path works");
     } else {
-        ESP_LOGE(TAG, "RADIO_URL_FAILED reason=headless_audio_enter_failed");
+        ESP_LOGE(TAG, "BEEP_FAILED reason=%s", failed_stage);
+        show_result_screen("Audio test failed", failed_stage);
+    }
+#else
+    const char *failed_stage = "Unknown";
+    radio_loop_exit_t exit_reason = RADIO_LOOP_EXIT_BOOT;
+    if (enter_headless_audio(&failed_stage)) {
+        failed_stage = "Unknown";
+        exit_reason = run_headless_loop();
+    } else {
+        ESP_LOGE(TAG, "BEEP_FAILED reason=%s", failed_stage);
     }
 
     stop_audio_path();
-    restore_display();
+    if (failed_stage && failed_stage[0] && strcmp(failed_stage, "Unknown") != 0) {
+        restore_display(false);
+        show_result_screen("Audio test failed", failed_stage);
+    } else if (exit_reason == RADIO_LOOP_EXIT_ALL_FAILED) {
+        restore_display(false);
+        show_result_screen("Radio failed", "Tried 5 stations\nCheck WiFi or stream URLs");
+    } else if (exit_reason == RADIO_LOOP_EXIT_NO_STATIONS) {
+        restore_display(false);
+        show_result_screen("Radio failed", "No enabled MP3 stations");
+    } else {
+        restore_display(true);
+    }
+#endif
 }

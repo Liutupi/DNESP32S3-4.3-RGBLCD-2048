@@ -73,13 +73,13 @@ static bool str_has(const char *haystack, const char *needle)
     return haystack && needle && strstr(haystack, needle) != NULL;
 }
 
-static bool url_is_direct_mp3(const char *url)
+static bool url_is_supported_mp3_candidate(const char *url)
 {
     char lower[RADIO_URL_MAX];
     lower_copy(lower, sizeof(lower), url);
     return url && url[0] &&
-           str_has(lower, ".mp3") &&
            !str_has(lower, ".m3u8") &&
+           !str_has(lower, "mpegurl") &&
            !str_has(lower, ".aac") &&
            !str_has(lower, ".aacp");
 }
@@ -189,11 +189,13 @@ static bool play_one_url(player_task_arg_t *arg, const char *url, int url_index)
     bool announced = false;
     bool ok = false;
 
-    if (!url_is_direct_mp3(url)) {
-        ESP_LOGW(TAG, "RADIO_URL_FAILED reason=unsupported_direct_mp3_only url=%s", url ? url : "(null)");
+    if (!url_is_supported_mp3_candidate(url)) {
+        ESP_LOGW(TAG, "RADIO_URL_FAILED reason=unsupported_stream_type url=%s", url ? url : "(null)");
         return false;
     }
-    if (url_index > 0) {
+    if (url_index == 0) {
+        ESP_LOGI(TAG, "RADIO_URL_TRY primary url=%s", url);
+    } else {
         ESP_LOGI(TAG, "RADIO_TRY_FALLBACK index=%d url=%s", url_index, url);
     }
 

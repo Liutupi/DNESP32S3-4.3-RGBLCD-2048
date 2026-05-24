@@ -3,6 +3,10 @@
 
 #include <stdbool.h>
 
+#ifndef RADIO_AUDIO_SELF_TEST_ONLY
+#define RADIO_AUDIO_SELF_TEST_ONLY 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,5 +1,6 @@
 set(src_dirs
             LED
+            ES8388
             MYIIC
             XL9555
             RGBLCD
@@ -9,6 +10,7 @@ set(src_dirs
 
 set(include_dirs
             LED
+            ES8388
             MYIIC
             XL9555
             RGBLCD
