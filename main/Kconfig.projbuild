@@ -29,9 +29,17 @@ endmenu
 
 menu "Network Radio"
 
+config RADIO_BOARD_ES8388_HEADLESS
+    bool "Enable onboard ES8388 headless Radio"
+    default y
+    help
+        Use the onboard ES8388 and speaker after the RGB LCD has been shut down
+        and its conflicting GPIOs have been released.
+
 config RADIO_EXTERNAL_I2S_DAC
     bool "Enable external I2S DAC for Radio"
     default n
+    depends on !RADIO_BOARD_ES8388_HEADLESS
     help
         Enable this only after wiring an external I2S DAC to free GPIOs.
         The onboard ES8388 path conflicts with the 4.3 inch RGB LCD pins.

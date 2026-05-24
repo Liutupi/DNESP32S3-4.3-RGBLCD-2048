@@ -14,7 +14,7 @@
 #include "tomato_timer.h"
 #include "racing_game.h"
 #include "flip_clock.h"
-#include "radio_app.h"
+#include "radio_headless.h"
 #include <stdio.h>
 
 #define SCREEN_W        800
@@ -369,7 +369,7 @@ static void launch_app(menu_app_t app)
             flip_clock_start();
             break;
         case APP_RADIO:
-            radio_app_start();
+            radio_headless_start();
             break;
         default:
             break;

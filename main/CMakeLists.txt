@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "APP/board_audio.c"
         "APP/boot_ui.c"
         "APP/bird_launcher.c"
         "APP/game2048.c"
@@ -9,6 +10,7 @@ idf_component_register(
         "APP/photoviewer.c"
         "APP/racing_game.c"
         "APP/flip_clock.c"
+        "APP/radio_headless.c"
         "APP/radio_app.c"
         "APP/radio_player.c"
         "APP/radio_stations.c"
