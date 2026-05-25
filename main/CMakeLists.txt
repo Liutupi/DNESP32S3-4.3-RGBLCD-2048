@@ -6,6 +6,7 @@ idf_component_register(
         "APP/boot_ui.c"
         "APP/game2048.c"
         "APP/lvgl_demo.c"
+        "APP/mastermind.c"
         "APP/menu.c"
         "APP/photoviewer.c"
         "APP/flip_clock.c"
