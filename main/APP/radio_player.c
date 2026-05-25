@@ -35,6 +35,8 @@
 #define RADIO_STOP_WAIT_MS 5000
 #define RADIO_STOP_POLL_MS 20
 #define RADIO_PCM_GAIN_Q15 27853 /* 0.85x headroom to reduce speaker/codec clipping */
+#define RADIO_MIN_SAMPLE_RATE_HZ 8000
+#define RADIO_MAX_SAMPLE_RATE_HZ 48000
 
 typedef struct {
     char name[64];
@@ -114,6 +116,11 @@ static bool content_type_is_rejected(const char *content_type)
            str_has(lower, "mpegurl") ||
            str_has(lower, "audio/aac") ||
            str_has(lower, "audio/aacp");
+}
+
+static bool http_status_is_rejected(int status)
+{
+    return status >= 400;
 }
 
 static bool first_bytes_look_like_mp3(const uint8_t *bytes, int len)
@@ -354,11 +361,22 @@ static bool write_pcm_frame(player_task_arg_t *arg, uint8_t *pcm, uint32_t decod
     if (!pcm || decoded_size == 0) {
         return true;
     }
-    if (info && info->sample_rate > 0 && info->sample_rate != BOARD_AUDIO_SAMPLE_RATE_HZ) {
-        set_last_error(arg, "unsupported_sample_rate %u", (unsigned)info->sample_rate);
-        ESP_LOGW(TAG, "RADIO_URL_FAILED reason=unsupported_sample_rate sample_rate=%u",
-                 (unsigned)info->sample_rate);
+    int sample_rate = (info && info->sample_rate > 0) ? (int)info->sample_rate : BOARD_AUDIO_SAMPLE_RATE_HZ;
+    if (sample_rate < RADIO_MIN_SAMPLE_RATE_HZ || sample_rate > RADIO_MAX_SAMPLE_RATE_HZ) {
+        set_last_error(arg, "unsupported_sample_rate %d", sample_rate);
+        ESP_LOGW(TAG, "RADIO_URL_FAILED reason=unsupported_sample_rate sample_rate=%d",
+                 sample_rate);
         return false;
+    }
+    if (board_audio_i2s_sample_rate() != sample_rate) {
+        esp_err_t ret = board_audio_i2s_start(sample_rate);
+        if (ret != ESP_OK) {
+            set_last_error(arg, "i2s_reconfig_sample_rate %d", sample_rate);
+            ESP_LOGW(TAG, "RADIO_URL_FAILED reason=i2s_reconfig_sample_rate sample_rate=%d err=%s",
+                     sample_rate, esp_err_to_name(ret));
+            return false;
+        }
+        ESP_LOGI(TAG, "I2S_SAMPLE_RATE_SET rate=%d", sample_rate);
     }
 
     int channels = (info && info->channel > 0) ? (int)info->channel : 2;
@@ -463,7 +481,7 @@ static bool play_one_url(player_task_arg_t *arg, const char *url, int url_index)
     esp_http_client_get_header(client, "Content-Type", &content_type);
     ESP_LOGI(TAG, "HTTP status=%d content-type=%s content-length=%" PRId64 " url=%s",
              status, content_type ? content_type : "(none)", content_length, url);
-    if (status < 200 || status >= 400) {
+    if (http_status_is_rejected(status)) {
         set_last_error(arg, "http_status %d", status);
         ESP_LOGW(TAG, "RADIO_URL_FAILED reason=http_status %d url=%s", status, url);
         goto cleanup;
@@ -694,7 +712,7 @@ bool radio_player_diag_test_url(const char *url, bool write_i2s,
              content_type ? content_type : "(none)");
     ESP_LOGI(TAG, "HTTP status=%d content-type=%s url=%s",
              result.http_status, result.content_type, url);
-    if (result.http_status < 200 || result.http_status >= 400) {
+    if (http_status_is_rejected(result.http_status)) {
         diag_set_reason(&result, "http_status %d", result.http_status);
         diag_emit(&result, cb, user_ctx);
         goto cleanup;
@@ -827,7 +845,8 @@ bool radio_player_diag_test_url(const char *url, bool write_i2s,
             diag_set_reason(&result, "decode OK");
             diag_emit(&result, cb, user_ctx);
 
-            if (result.sample_rate != BOARD_AUDIO_SAMPLE_RATE_HZ) {
+            if (result.sample_rate < RADIO_MIN_SAMPLE_RATE_HZ ||
+                result.sample_rate > RADIO_MAX_SAMPLE_RATE_HZ) {
                 diag_set_reason(&result, "unsupported sample_rate=%d", result.sample_rate);
                 ESP_LOGW(TAG, "RADIO_URL_FAILED reason=unsupported_sample_rate sample_rate=%d",
                          result.sample_rate);
@@ -876,7 +895,8 @@ bool radio_player_diag_test_url(const char *url, bool write_i2s,
 
             uint32_t channels = result.channels > 0 ? (uint32_t)result.channels : 2;
             played_samples += (out.decoded_size / sizeof(int16_t)) / channels;
-            if (played_samples >= BOARD_AUDIO_SAMPLE_RATE_HZ * 2) {
+            int play_rate = result.sample_rate > 0 ? result.sample_rate : BOARD_AUDIO_SAMPLE_RATE_HZ;
+            if (played_samples >= (uint32_t)play_rate * 2) {
                 goto cleanup;
             }
         }

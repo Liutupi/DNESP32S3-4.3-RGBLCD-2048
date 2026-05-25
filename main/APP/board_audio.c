@@ -9,6 +9,7 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <math.h>
@@ -30,6 +31,22 @@ static bool s_i2s_started;
 static bool s_expander_ready;
 static int s_i2s_rate;
 static uint32_t s_i2s_write_log_count;
+static SemaphoreHandle_t s_i2s_mutex;
+
+static bool lock_i2s(TickType_t wait_ticks)
+{
+    if (!s_i2s_mutex) {
+        s_i2s_mutex = xSemaphoreCreateMutex();
+    }
+    return s_i2s_mutex && xSemaphoreTake(s_i2s_mutex, wait_ticks) == pdTRUE;
+}
+
+static void unlock_i2s(void)
+{
+    if (s_i2s_mutex) {
+        xSemaphoreGive(s_i2s_mutex);
+    }
+}
 
 esp_err_t board_audio_init_i2c_and_expander(void)
 {
@@ -81,26 +98,44 @@ void board_audio_codec_stop(void)
 
 esp_err_t board_audio_i2s_start(int sample_rate)
 {
+    if (!lock_i2s(pdMS_TO_TICKS(1000))) {
+        return ESP_ERR_TIMEOUT;
+    }
+
     if (s_i2s_started && s_i2s_rate == sample_rate) {
+        unlock_i2s();
         return ESP_OK;
     }
 
     if (s_tx_handle && s_i2s_started) {
-        ESP_RETURN_ON_ERROR(i2s_channel_disable(s_tx_handle),
-                            TAG, "i2s_channel_disable failed");
+        esp_err_t err = i2s_channel_disable(s_tx_handle);
+        if (err != ESP_OK) {
+            unlock_i2s();
+            ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_disable failed");
+        }
         s_i2s_started = false;
     }
 
     if (s_tx_handle) {
         i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
-        ESP_RETURN_ON_ERROR(i2s_channel_reconfig_std_clock(s_tx_handle, &clk_cfg),
-                            TAG, "i2s clock reconfig failed");
-        ESP_RETURN_ON_ERROR(i2s_channel_enable(s_tx_handle), TAG, "i2s_channel_enable failed");
+        esp_err_t err = i2s_channel_reconfig_std_clock(s_tx_handle, &clk_cfg);
+        if (err != ESP_OK) {
+            unlock_i2s();
+            ESP_RETURN_ON_ERROR(err, TAG, "i2s clock reconfig failed");
+        }
+        err = i2s_channel_enable(s_tx_handle);
+        if (err != ESP_OK) {
+            unlock_i2s();
+            ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_enable failed");
+        }
     } else {
         i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
         chan_cfg.auto_clear = true;
-        ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_tx_handle, NULL),
-                            TAG, "i2s_new_channel failed");
+        esp_err_t err = i2s_new_channel(&chan_cfg, &s_tx_handle, NULL);
+        if (err != ESP_OK) {
+            unlock_i2s();
+            ESP_RETURN_ON_ERROR(err, TAG, "i2s_new_channel failed");
+        }
 
         i2s_std_config_t std_cfg = {
             .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate),
@@ -119,20 +154,36 @@ esp_err_t board_audio_i2s_start(int sample_rate)
                 },
             },
         };
-        ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_tx_handle, &std_cfg),
-                            TAG, "i2s_channel_init_std_mode failed");
-        ESP_RETURN_ON_ERROR(i2s_channel_enable(s_tx_handle), TAG, "i2s_channel_enable failed");
+        err = i2s_channel_init_std_mode(s_tx_handle, &std_cfg);
+        if (err != ESP_OK) {
+            i2s_del_channel(s_tx_handle);
+            s_tx_handle = NULL;
+            unlock_i2s();
+            ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_init_std_mode failed");
+        }
+        err = i2s_channel_enable(s_tx_handle);
+        if (err != ESP_OK) {
+            i2s_del_channel(s_tx_handle);
+            s_tx_handle = NULL;
+            unlock_i2s();
+            ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_enable failed");
+        }
     }
 
     s_i2s_started = true;
     s_i2s_rate = sample_rate;
     s_i2s_write_log_count = 0;
     ESP_LOGI(TAG, "I2S_INIT_OK mclk=3 bclk=46 lrck=9 dout=10(ES8388_DSDIN) din=14(ES8388_ASDOUT)");
+    unlock_i2s();
     return ESP_OK;
 }
 
 void board_audio_i2s_stop(void)
 {
+    if (!lock_i2s(pdMS_TO_TICKS(1000))) {
+        ESP_LOGW(TAG, "I2S_STOP_SKIPPED lock timeout");
+        return;
+    }
     if (s_tx_handle) {
         if (s_i2s_started) {
             i2s_channel_disable(s_tx_handle);
@@ -142,6 +193,7 @@ void board_audio_i2s_stop(void)
     }
     s_i2s_started = false;
     s_i2s_rate = 0;
+    unlock_i2s();
 }
 
 bool board_audio_i2s_is_started(void)
@@ -156,7 +208,12 @@ int board_audio_i2s_sample_rate(void)
 
 bool board_audio_i2s_write(const int16_t *samples, size_t sample_count)
 {
+    if (!lock_i2s(pdMS_TO_TICKS(100))) {
+        ESP_LOGW(TAG, "I2S write skipped: lock timeout");
+        return false;
+    }
     if (!s_i2s_started || !s_tx_handle || !samples || sample_count == 0) {
+        unlock_i2s();
         return false;
     }
 
@@ -166,12 +223,14 @@ bool board_audio_i2s_write(const int16_t *samples, size_t sample_count)
     if (err != ESP_OK || bytes_written == 0) {
         ESP_LOGE(TAG, "I2S write failed err=%s bytes=%u",
                  esp_err_to_name(err), (unsigned)bytes_written);
+        unlock_i2s();
         return false;
     }
     s_i2s_write_log_count++;
     if (s_i2s_write_log_count == 1 || s_i2s_write_log_count % 500 == 0) {
         ESP_LOGI(TAG, "I2S_WRITE_OK bytes=%u", (unsigned)bytes_written);
     }
+    unlock_i2s();
     return true;
 }
 

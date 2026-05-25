@@ -97,6 +97,28 @@ static bool wifi_is_connected(void)
     return esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
 }
 
+static void reset_boot_wait_state(void)
+{
+    if (s_boot_diag_timer) {
+        lv_timer_del(s_boot_diag_timer);
+        s_boot_diag_timer = NULL;
+    }
+    if (s_diag_screen_timer) {
+        lv_timer_del(s_diag_screen_timer);
+        s_diag_screen_timer = NULL;
+    }
+    s_boot_wait_pressed = false;
+    s_boot_wait_long_fired = false;
+    s_boot_wait_press_start_ms = 0;
+    s_boot_wait_mode = RADIO_BOOT_WAIT_NONE;
+    s_diag_update_pending = false;
+    s_diag_done = false;
+    s_diag_success = false;
+    s_diag_scr = NULL;
+    s_diag_title = NULL;
+    s_diag_detail = NULL;
+}
+
 static void pump_lvgl_for_ms(int ms)
 {
     int64_t until = esp_timer_get_time() + (int64_t)ms * 1000;
@@ -635,17 +657,6 @@ static bool run_visible_stream_diag(radio_diag_candidate_t *verified,
             show_diag_status(title, detail, 900);
             continue;
         }
-        if (result.sample_rate != BOARD_AUDIO_SAMPLE_RATE_HZ) {
-            snprintf(s_last_fail_reason, sizeof(s_last_fail_reason),
-                     "unsupported sample_rate=%d", result.sample_rate);
-            char title[96];
-            char detail[160];
-            snprintf(title, sizeof(title), "Testing %d/%d\n%s", i + 1, count, candidates[i].name);
-            snprintf(detail, sizeof(detail), "unsupported sample_rate=%d", result.sample_rate);
-            show_diag_status(title, detail, 900);
-            continue;
-        }
-
         char title[96];
         char detail[256];
         snprintf(title, sizeof(title), "Testing %d/%d\n%s", i + 1, count, candidates[i].name);
@@ -710,15 +721,6 @@ static bool run_stream_diag_tasksafe(radio_diag_candidate_t *verified,
             vTaskDelay(pdMS_TO_TICKS(900));
             continue;
         }
-        if (result.sample_rate != BOARD_AUDIO_SAMPLE_RATE_HZ) {
-            snprintf(s_last_fail_reason, sizeof(s_last_fail_reason),
-                     "unsupported sample_rate=%d", result.sample_rate);
-            snprintf(detail, sizeof(detail), "unsupported sample_rate=%d", result.sample_rate);
-            diag_state_set(title, detail, false, false);
-            vTaskDelay(pdMS_TO_TICKS(900));
-            continue;
-        }
-
         if (verified) {
             *verified = candidates[i];
         }
@@ -1007,6 +1009,11 @@ void radio_headless_start(void)
 {
     ESP_LOGI(TAG, "RADIO_SELF_TEST_TAG=%s mode=%d visible_diag=%d",
              RADIO_SELFTEST_TAG, RADIO_AUDIO_SELF_TEST_ONLY, RADIO_VISIBLE_STREAM_DIAG);
+    reset_boot_wait_state();
+    s_player_failed = false;
+    s_player_playing = false;
+    snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "unknown");
+
     show_message("Radio Audio Test\n" RADIO_SELFTEST_TAG "\nChecking WiFi...", 1800);
 
     if (!wifi_is_connected()) {
