@@ -19,8 +19,10 @@
  */
 
 #include "lvgl_demo.h"
+#include "app_network.h"
 #include "menu.h"
 #include "tomato_timer.h"
+#include "ui_fonts.h"
 #include "lcd.h"
 #include "touch.h"
 #include "esp_timer.h"
@@ -48,6 +50,8 @@ void lvgl_demo(void)
     lv_init();              /* 初始化LVGL图形库 */
     lv_port_disp_init();    /* lvgl显示接口初始化,放在lv_init()的后面 */
     lv_port_indev_init();   /* lvgl输入接口初始化,放在lv_init()的后面 */
+    ui_fonts_init();        /* 初始化WarmOS外部中文字体，失败时自动回退 */
+    vTaskDelay(pdMS_TO_TICKS(1));
 
     /* 为LVGL提供时基单元 */
     const esp_timer_create_args_t lvgl_tick_timer_args = {
@@ -59,6 +63,13 @@ void lvgl_demo(void)
 
     /* 还原为主菜单原生入口 */
     menu_start();
+    lv_obj_invalidate(lv_scr_act());
+    lv_refr_now(NULL);
+    lv_timer_handler();
+    vTaskDelay(pdMS_TO_TICKS(20));
+    lv_timer_handler();
+    lv_refr_now(NULL);
+    app_network_start();
 
     while (1)
     {

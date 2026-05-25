@@ -16,6 +16,8 @@ idf_component_register(
         "APP/reaction_test.c"
         "APP/tjpgd.c"
         "APP/tomato_timer.c"
+        "APP/ui_fonts.c"
+        "APP/ui_text.c"
     INCLUDE_DIRS 
         "."
         "APP"

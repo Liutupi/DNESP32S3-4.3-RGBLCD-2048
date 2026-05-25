@@ -21,7 +21,6 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include <stdio.h>
-#include "app_network.h"
 #include "lvgl_demo.h"
 
 
@@ -42,6 +41,5 @@ void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_init());
     }
 
-   app_network_start();
    lvgl_demo();
 }

@@ -7,6 +7,8 @@
 
 #include "tomato_timer.h"
 #include "menu.h"
+#include "ui_fonts.h"
+#include "ui_text.h"
 
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
@@ -335,7 +337,7 @@ static void reset_mode(timer_mode_t mode)
 
 static void set_label(lv_obj_t *obj, const char *text)
 {
-    if (obj) lv_label_set_text(obj, text);
+    ui_text_set(obj, text);
 }
 
 static void style_panel(lv_obj_t *obj, uint32_t color, lv_opa_t opa, lv_coord_t radius)
@@ -497,7 +499,7 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *text, const lv_font_t 
                             uint32_t color, lv_coord_t x, lv_coord_t y)
 {
     lv_obj_t *label = lv_label_create(parent);
-    lv_label_set_text(label, text);
+    ui_text_set(label, text);
     lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_pos(label, x, y);
@@ -530,8 +532,8 @@ static glow_button_t make_button(lv_obj_t *parent, const char *text, lv_coord_t 
     lv_obj_add_event_cb(b.btn, button_event_proxy, LV_EVENT_CLICKED, (void *)cb);
 
     b.label = lv_label_create(b.btn);
-    lv_label_set_text(b.label, text);
-    lv_obj_set_style_text_font(b.label, &lv_font_montserrat_16, 0);
+    ui_text_set(b.label, text);
+    lv_obj_set_style_text_font(b.label, UI_FONT_CN_16, 0);
     lv_obj_set_style_text_color(b.label, lv_color_hex(text_color), 0);
     lv_obj_center(b.label);
     lv_obj_clear_flag(b.label, LV_OBJ_FLAG_CLICKABLE);
@@ -915,10 +917,10 @@ static void create_background(lv_obj_t *scr)
 
 static void create_top_bar(lv_obj_t *scr)
 {
-    g_page_title = make_label(scr, "Tomato Glow Clock", &lv_font_montserrat_24, C_TEXT, 38, 28);
-    make_label(scr, "Focus / Break / Warm desk clock", &lv_font_montserrat_14, C_TEXT_DIM, 39, 62);
+    g_page_title = make_label(scr, "Tomato Glow Clock", UI_FONT_CN_24, C_TEXT, 38, 28);
+    make_label(scr, "Focus / Break / Warm desk clock", UI_FONT_CN_16, C_TEXT_DIM, 39, 62);
     g_time_label = make_label(scr, "--:--", &lv_font_montserrat_28, C_TEXT, 610, 24);
-    g_date_label = make_label(scr, "Time syncing", &lv_font_montserrat_14, C_TEXT_DIM, 612, 60);
+    g_date_label = make_label(scr, "Time syncing", UI_FONT_CN_16, C_TEXT_DIM, 612, 60);
     make_button(scr, "Menu", 700, 24, 66, 36, C_BUTTON_DARK, C_TEXT, on_back);
 }
 
@@ -952,7 +954,7 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_remove_style(g_timer_arc, NULL, LV_PART_KNOB);
     lv_obj_clear_flag(g_timer_arc, LV_OBJ_FLAG_CLICKABLE);
 
-    g_mode_label = make_label(card, "Focus Mode", &lv_font_montserrat_20, C_TEXT, 103, 110);
+    g_mode_label = make_label(card, "Focus Mode", UI_FONT_CN_20, C_TEXT, 103, 110);
     lv_obj_set_style_text_align(g_mode_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_mode_label, 180);
 
@@ -960,7 +962,7 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_style_text_align(g_countdown_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_countdown_label, 200);
 
-    g_tomato_label = make_label(card, "Tomato 1 / 4", &lv_font_montserrat_14, C_TEXT_DIM, 104, 204);
+    g_tomato_label = make_label(card, "Tomato 1 / 4", UI_FONT_CN_16, C_TEXT_DIM, 104, 204);
     lv_obj_set_style_text_align(g_tomato_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_tomato_label, 180);
 
@@ -969,14 +971,14 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_pos(weather_card, 366, 26);
     style_panel(weather_card, C_CARD_DARK, LV_OPA_50, 22);
     lv_obj_set_style_pad_all(weather_card, 0, 0);
-    g_weather_city_label = make_label(weather_card, "Zhongshan Nanlang", &lv_font_montserrat_16, C_TEXT, 22, 20);
+    g_weather_city_label = make_label(weather_card, "Zhongshan Nanlang", UI_FONT_CN_16, C_TEXT, 22, 20);
     lv_obj_set_width(g_weather_city_label, 154);
     lv_label_set_long_mode(g_weather_city_label, LV_LABEL_LONG_DOT);
     g_weather_temp_label = make_label(weather_card, "26 deg", &lv_font_montserrat_28, 0xFFFFFF, 22, 54);
-    g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", &lv_font_montserrat_16, C_TEXT_DIM, 22, 96);
+    g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", UI_FONT_CN_16, C_TEXT_DIM, 22, 96);
     lv_obj_set_width(g_weather_detail_label, 150);
     lv_label_set_long_mode(g_weather_detail_label, LV_LABEL_LONG_DOT);
-    g_weather_status_label = make_label(weather_card, "Local sample", &lv_font_montserrat_12, C_MUTED, 22, 136);
+    g_weather_status_label = make_label(weather_card, "Local sample", UI_FONT_CN_16, C_MUTED, 22, 136);
     lv_obj_set_width(g_weather_status_label, 150);
     lv_label_set_long_mode(g_weather_status_label, LV_LABEL_LONG_DOT);
 
@@ -995,8 +997,8 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_pos(rhythm_card, 366, 224);
     style_panel(rhythm_card, C_CARD_DARK, LV_OPA_40, 22);
     lv_obj_set_style_pad_all(rhythm_card, 0, 0);
-    make_label(rhythm_card, "Today Rhythm", &lv_font_montserrat_16, C_TEXT, 22, 8);
-    g_rhythm_label = make_label(rhythm_card, "25 min focus + 5 min break", &lv_font_montserrat_14, C_TEXT_DIM, 146, 12);
+    make_label(rhythm_card, "Today Rhythm", UI_FONT_CN_16, C_TEXT, 22, 8);
+    g_rhythm_label = make_label(rhythm_card, "25 min focus + 5 min break", UI_FONT_CN_16, C_TEXT_DIM, 146, 12);
     lv_obj_set_width(g_rhythm_label, 168);
     lv_label_set_long_mode(g_rhythm_label, LV_LABEL_LONG_DOT);
 
@@ -1074,14 +1076,14 @@ static void show_settings_page(void)
     clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
-    lv_label_set_text(g_page_title, "Settings");
+    ui_text_set(g_page_title, "Settings");
 
     lv_obj_t *panel = lv_obj_create(g_scr);
     lv_obj_set_size(panel, 732, 316);
     lv_obj_set_pos(panel, 34, 92);
     style_panel(panel, C_CARD_SOFT, LV_OPA_70, 24);
     lv_obj_set_style_pad_all(panel, 0, 0);
-    make_label(panel, "Pomodoro Settings", &lv_font_montserrat_20, C_TEXT, 28, 20);
+    make_label(panel, "Pomodoro Settings", UI_FONT_CN_20, C_TEXT, 28, 20);
     make_button(panel, "WiFi", 598, 16, 96, 36, C_HIGHLIGHT, C_CARD_DARK, on_wifi_settings);
 
     g_settings_list = lv_obj_create(panel);
@@ -1118,12 +1120,12 @@ static void update_wifi_scan_list(void)
     g_wifi_scan_dirty = false;
 
     if (g_wifi_scan_busy) {
-        make_label(g_wifi_list, "Scanning nearby WiFi...", &lv_font_montserrat_14, C_TEXT_DIM, 14, 14);
+        make_label(g_wifi_list, "Scanning nearby WiFi...", UI_FONT_CN_16, C_TEXT_DIM, 14, 14);
         return;
     }
 
     if (g_wifi_scan_count <= 0) {
-        make_label(g_wifi_list, "No networks yet. Tap Scan.", &lv_font_montserrat_14, C_TEXT_DIM, 14, 14);
+        make_label(g_wifi_list, "No networks yet. Tap Scan.", UI_FONT_CN_16, C_TEXT_DIM, 14, 14);
         return;
     }
 
@@ -1143,8 +1145,8 @@ static void update_wifi_scan_list(void)
         lv_obj_add_event_cb(row, on_wifi_ap_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *label = lv_label_create(row);
-        lv_label_set_text(label, row_text);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        ui_text_set(label, row_text);
+        lv_obj_set_style_text_font(label, UI_FONT_CN_16, 0);
         lv_obj_set_style_text_color(label, lv_color_hex(C_TEXT), 0);
         lv_obj_set_width(label, 270);
         lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
@@ -1184,7 +1186,7 @@ static lv_obj_t *make_textarea(lv_obj_t *parent, const char *placeholder,
     lv_obj_set_style_border_width(ta, 1, 0);
     lv_obj_set_style_radius(ta, 12, 0);
     lv_obj_set_style_text_color(ta, lv_color_hex(C_TEXT), 0);
-    lv_obj_set_style_text_font(ta, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(ta, UI_FONT_CN_16, 0);
     
     /* Center the input text vertically inside 46px height */
     lv_obj_set_style_pad_top(ta, 11, 0);
@@ -1592,7 +1594,7 @@ static void on_phone_setup(lv_event_t *e)
     clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
-    lv_label_set_text(g_page_title, "Phone Setup");
+    ui_text_set(g_page_title, "Phone Setup");
 
     lv_obj_t *panel = lv_obj_create(g_scr);
     lv_obj_set_size(panel, 520, 260);
@@ -1600,12 +1602,12 @@ static void on_phone_setup(lv_event_t *e)
     style_panel(panel, C_CARD_SOFT, LV_OPA_70, 28);
     lv_obj_set_style_pad_all(panel, 0, 0);
 
-    make_label(panel, LV_SYMBOL_WIFI "  Hotspot Active", &lv_font_montserrat_28, C_HIGHLIGHT, 110, 30);
-    make_label(panel, "Connect your phone to WiFi:", &lv_font_montserrat_16, C_TEXT_DIM, 120, 80);
-    make_label(panel, "TomatoClock-Setup", &lv_font_montserrat_28, C_TEXT, 90, 110);
-    make_label(panel, "Then wait for the config page to appear.", &lv_font_montserrat_14, C_TEXT_DIM, 100, 160);
+    make_label(panel, LV_SYMBOL_WIFI "  Hotspot Active", UI_FONT_CN_24, C_HIGHLIGHT, 110, 30);
+    make_label(panel, "Connect your phone to WiFi:", UI_FONT_CN_16, C_TEXT_DIM, 120, 80);
+    make_label(panel, "TomatoClock-Setup", UI_FONT_CN_24, C_TEXT, 90, 110);
+    make_label(panel, "Then wait for the config page to appear.", UI_FONT_CN_16, C_TEXT_DIM, 100, 160);
 
-    g_wifi_status_label = make_label(panel, "Waiting for phone...", &lv_font_montserrat_16, C_HIGHLIGHT_2, 140, 200);
+    g_wifi_status_label = make_label(panel, "Waiting for phone...", UI_FONT_CN_16, C_HIGHLIGHT_2, 140, 200);
 
     make_button(g_scr, "Cancel", 330, 424, 140, 40, C_BUTTON_DARK, C_TEXT, on_settings);
 }
@@ -1617,7 +1619,7 @@ static void show_wifi_page(void)
     clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
-    lv_label_set_text(g_page_title, "WiFi Setup");
+    ui_text_set(g_page_title, "WiFi Setup");
 
     lv_obj_t *panel = lv_obj_create(g_scr);
     lv_obj_set_size(panel, 732, 270);
@@ -1631,7 +1633,7 @@ static void show_wifi_page(void)
     lv_obj_add_flag(g_scr, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(g_scr, on_wifi_screen_click, LV_EVENT_CLICKED, NULL);
 
-    make_label(panel, "Nearby networks", &lv_font_montserrat_16, C_TEXT, 28, 20);
+    make_label(panel, "Nearby networks", UI_FONT_CN_16, C_TEXT, 28, 20);
     make_button(panel, "Scan", 242, 16, 82, 34, C_HIGHLIGHT, C_CARD_DARK, on_wifi_scan);
 
     g_wifi_list = lv_obj_create(panel);
@@ -1642,15 +1644,15 @@ static void show_wifi_page(void)
     lv_obj_set_scroll_dir(g_wifi_list, LV_DIR_VER);
     lv_obj_set_style_pad_all(g_wifi_list, 0, 0);
 
-    make_label(panel, "SSID", &lv_font_montserrat_14, C_TEXT_DIM, 382, 20);
+    make_label(panel, "SSID", UI_FONT_CN_16, C_TEXT_DIM, 382, 20);
     g_wifi_ssid_ta = make_textarea(panel, "Select or type SSID", 382, 44, false);
     lv_textarea_set_text(g_wifi_ssid_ta, has_text(g_wifi_ssid) ? g_wifi_ssid : "");
 
-    make_label(panel, "Password", &lv_font_montserrat_14, C_TEXT_DIM, 382, 102);
+    make_label(panel, "Password", UI_FONT_CN_16, C_TEXT_DIM, 382, 102);
     g_wifi_password_ta = make_textarea(panel, "Leave blank for open WiFi", 382, 126, true);
 
     g_wifi_status_label = make_label(panel, has_text(g_wifi_ssid) ? "Saved network loaded" : "No saved WiFi",
-                                     &lv_font_montserrat_14, C_TEXT_DIM, 382, 184);
+                                     UI_FONT_CN_16, C_TEXT_DIM, 382, 184);
     lv_obj_set_width(g_wifi_status_label, 292);
     lv_label_set_long_mode(g_wifi_status_label, LV_LABEL_LONG_DOT);
     make_button(panel, "Connect", 382, 214, 100, 38, C_HIGHLIGHT, C_CARD_DARK, on_wifi_connect);
@@ -1668,7 +1670,7 @@ static void show_done_page(void)
     clear_page_refs();
     create_background(g_scr);
     create_top_bar(g_scr);
-    lv_label_set_text(g_page_title, "Focus Complete");
+    ui_text_set(g_page_title, "Focus Complete");
 
     lv_obj_t *panel = lv_obj_create(g_scr);
     lv_obj_set_size(panel, 520, 260);
@@ -1684,9 +1686,9 @@ static void show_done_page(void)
     lv_obj_set_style_border_width(tomato, 0, 0);
     lv_obj_clear_flag(tomato, LV_OBJ_FLAG_SCROLLABLE);
 
-    make_label(panel, "One tomato is done!", &lv_font_montserrat_28, C_TEXT, 130, 140);
+    make_label(panel, "One tomato is done!", UI_FONT_CN_24, C_TEXT, 130, 140);
     make_label(panel, g_mode == MODE_LONG_BREAK ? "Long break is ready." : "Take a warm 5 minute break.",
-               &lv_font_montserrat_16, C_TEXT_DIM, 164, 184);
+               UI_FONT_CN_16, C_TEXT_DIM, 164, 184);
     make_button(g_scr, "Start Break", 255, 424, 140, 40, C_HIGHLIGHT, C_CARD_DARK, on_start);
     make_button(g_scr, "Skip", 422, 424, 140, 40, C_BUTTON_DARK, C_TEXT, on_skip);
 }

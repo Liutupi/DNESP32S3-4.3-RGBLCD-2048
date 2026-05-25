@@ -14,7 +14,11 @@
 #include "tomato_timer.h"
 #include "flip_clock.h"
 #include "radio_headless.h"
+#include "ui_fonts.h"
+#include "ui_text.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <stdio.h>
 
 #define SCREEN_W        800
@@ -109,7 +113,7 @@ static lv_obj_t *create_label(lv_obj_t *parent, const char *text,
                               const lv_font_t *font, uint32_t color)
 {
     lv_obj_t *label = lv_label_create(parent);
-    lv_label_set_text(label, text);
+    ui_text_set(label, text);
     lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_letter_space(label, 0, 0);
@@ -158,17 +162,17 @@ static void update_network_status_label(void)
     wifi_ap_record_t ap;
     if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
         char buf[40];
-        snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI "  %ddBm", (int)ap.rssi);
-        lv_label_set_text(g_network_label, buf);
+        snprintf(buf, sizeof(buf), "WiFi  %ddBm", (int)ap.rssi);
+        ui_text_set(g_network_label, buf);
         lv_obj_set_style_text_color(g_network_label, lv_color_hex(0x8FE38F), 0);
         return;
     }
 
     if (app_network_has_configured_wifi()) {
-        lv_label_set_text(g_network_label, LV_SYMBOL_WIFI "  Connecting");
+        ui_text_set(g_network_label, "WiFi  连接中");
         lv_obj_set_style_text_color(g_network_label, lv_color_hex(COL_ACCENT), 0);
     } else {
-        lv_label_set_text(g_network_label, LV_SYMBOL_WIFI "  Setup");
+        ui_text_set(g_network_label, "WiFi  设置");
         lv_obj_set_style_text_color(g_network_label, lv_color_hex(COL_TEXT_SOFT), 0);
     }
 }
@@ -197,10 +201,10 @@ static lv_obj_t *create_header(lv_obj_t *parent)
     lv_obj_t *title = create_label(header, "WarmOS", &lv_font_montserrat_48, COL_TEXT);
     lv_obj_set_pos(title, HEADER_X, HEADER_Y);
 
-    lv_obj_t *sub = create_label(header, "Good evening, Tupi", &lv_font_montserrat_16, COL_TEXT_SOFT);
+    lv_obj_t *sub = create_label(header, "晚上好，Tupi", UI_FONT_CN_16, COL_TEXT_SOFT);
     lv_obj_set_pos(sub, 50, 82);
 
-    g_network_label = create_label(header, LV_SYMBOL_WIFI "  Starting", &lv_font_montserrat_14, COL_TEXT_SOFT);
+    g_network_label = create_label(header, "WiFi  启动中", UI_FONT_CN_16, COL_TEXT_SOFT);
     lv_obj_set_width(g_network_label, 190);
     lv_obj_set_style_text_align(g_network_label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(g_network_label, LV_LABEL_LONG_CLIP);
@@ -221,13 +225,13 @@ static lv_obj_t *create_main_photo_card(lv_obj_t *parent)
 
     create_panel(card, 224, -34, 118, 118, COL_GLOW, LV_OPA_20, 36);
 
-    lv_obj_t *title = create_label(card, "PHOTO", &lv_font_montserrat_28, COL_TEXT);
+    lv_obj_t *title = create_label(card, "相册", UI_FONT_CN_20, COL_TEXT);
     lv_obj_set_pos(title, 34, 48);
 
-    lv_obj_t *sub = create_label(card, "Family album from SD card", &lv_font_montserrat_16, COL_TEXT_SOFT);
+    lv_obj_t *sub = create_label(card, "从 SD 卡浏览照片", UI_FONT_CN_16, COL_TEXT_SOFT);
     lv_obj_set_pos(sub, 36, 94);
 
-    lv_obj_t *hint = create_label(card, "Tap to open", &lv_font_montserrat_14, COL_ACCENT);
+    lv_obj_t *hint = create_label(card, "点击打开", UI_FONT_CN_16, COL_ACCENT);
     lv_obj_set_pos(hint, 36, 134);
 
     return card;
@@ -245,13 +249,13 @@ static lv_obj_t *create_flip_clock_card(lv_obj_t *parent)
     create_panel(card, 186, -26, 94, 94, COL_ACCENT_2, LV_OPA_20, 34);
     create_panel(card, 28, 30, 10, 10, COL_ACCENT, LV_OPA_COVER, 5);
 
-    lv_obj_t *title = create_label(card, "Flip Clock", &lv_font_montserrat_28, COL_TEXT);
+    lv_obj_t *title = create_label(card, "翻页时钟", UI_FONT_CN_20, COL_TEXT);
     lv_obj_set_pos(title, 34, 46);
 
-    lv_obj_t *sub = create_label(card, "Warm ambient desk clock", &lv_font_montserrat_16, COL_TEXT_SOFT);
+    lv_obj_t *sub = create_label(card, "暖色桌面时钟", UI_FONT_CN_16, COL_TEXT_SOFT);
     lv_obj_set_pos(sub, 36, 94);
 
-    lv_obj_t *hint = create_label(card, "Tap to open", &lv_font_montserrat_14, COL_ACCENT);
+    lv_obj_t *hint = create_label(card, "点击打开", UI_FONT_CN_16, COL_ACCENT);
     lv_obj_set_pos(hint, 36, 138);
 
     return card;
@@ -267,12 +271,12 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x, const char *ti
 
     create_panel(card, 18, 15, 8, 8, accent, LV_OPA_COVER, 4);
 
-    lv_obj_t *title_label = create_label(card, title, &lv_font_montserrat_16, COL_TEXT);
+    lv_obj_t *title_label = create_label(card, title, UI_FONT_CN_16, COL_TEXT);
     lv_obj_set_pos(title_label, 18, 27);
     lv_obj_set_width(title_label, DOCK_W - 28);
     lv_label_set_long_mode(title_label, LV_LABEL_LONG_CLIP);
 
-    lv_obj_t *sub_label = create_label(card, subtitle, &lv_font_montserrat_12, COL_TEXT_SOFT);
+    lv_obj_t *sub_label = create_label(card, subtitle, UI_FONT_CN_16, COL_TEXT_SOFT);
     lv_obj_set_pos(sub_label, 20, 52);
     lv_obj_set_width(sub_label, DOCK_W - 32);
     lv_label_set_long_mode(sub_label, LV_LABEL_LONG_CLIP);
@@ -283,20 +287,20 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x, const char *ti
 static void create_dock(lv_obj_t *parent)
 {
     g_2048_card = create_dock_card(parent, DOCK_2048_X, "2048", "Puzzle", COL_ACCENT);
-    g_react_card = create_dock_card(parent, DOCK_REACT_X, "Reaction", "Tap test", COL_ACCENT_2);
-    g_tomato_card = create_dock_card(parent, DOCK_TOMATO_X, "Tomato", "25:00", COL_ACCENT_2);
-    g_radio_card = create_dock_card(parent, DOCK_RADIO_X, "Radio", "Streams", COL_ACCENT_2);
+    g_react_card = create_dock_card(parent, DOCK_REACT_X, "反应", "测试", COL_ACCENT_2);
+    g_tomato_card = create_dock_card(parent, DOCK_TOMATO_X, "番茄钟", "25:00", COL_ACCENT_2);
+    g_radio_card = create_dock_card(parent, DOCK_RADIO_X, "电台", "直播流", COL_ACCENT_2);
 }
 
 static lv_obj_t *create_footer(lv_obj_t *parent)
 {
     lv_obj_t *footer = create_panel(parent, 0, 432, SCREEN_W, 48, COL_BG, LV_OPA_TRANSP, 0);
 
-    lv_obj_t *left = create_label(footer, "Slide gently into play", &lv_font_montserrat_12, COL_TEXT_SOFT);
+    lv_obj_t *left = create_label(footer, "轻点进入应用", UI_FONT_CN_16, COL_TEXT_SOFT);
     lv_obj_set_pos(left, 48, 10);
 
-    lv_obj_t *right = create_label(footer, "DNESP32S3 . Made by Tupi", &lv_font_montserrat_12, COL_TEXT_SOFT);
-    lv_obj_set_pos(right, 584, 10);
+    lv_obj_t *right = create_label(footer, "DNESP32S3 / Tupi 制作", UI_FONT_CN_16, COL_TEXT_SOFT);
+    lv_obj_set_pos(right, 560, 10);
 
     return footer;
 }
@@ -464,10 +468,15 @@ void menu_start(void)
     make_passive(g_menu_root);
 
     create_background(g_menu_root);
+    vTaskDelay(pdMS_TO_TICKS(1));
     lv_obj_t *header = create_header(g_menu_root);
+    vTaskDelay(pdMS_TO_TICKS(1));
     lv_obj_t *photo = create_main_photo_card(g_menu_root);
+    vTaskDelay(pdMS_TO_TICKS(1));
     lv_obj_t *flip = create_flip_clock_card(g_menu_root);
+    vTaskDelay(pdMS_TO_TICKS(1));
     create_dock(g_menu_root);
+    vTaskDelay(pdMS_TO_TICKS(1));
     lv_obj_t *footer = create_footer(g_menu_root);
     create_touch_layer(g_menu_root);
 
