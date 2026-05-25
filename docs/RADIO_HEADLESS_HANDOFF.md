@@ -53,8 +53,8 @@ Known fixed pins:
 | I2S MCLK | GPIO3 |
 | I2S BCLK | GPIO46 |
 | I2S LRCK | GPIO9 |
-| I2S DOUT | GPIO14 |
-| I2S DIN | GPIO10 or unused |
+| I2S DOUT / ESP32 TX -> ES8388 DSDIN | GPIO10 |
+| I2S DIN / ESP32 RX <- ES8388 ASDOUT | GPIO14 or unused |
 | I2C SDA | GPIO41 |
 | I2C SCL | GPIO42 |
 | SPK_EN | XL9555 bit2, active low |
@@ -81,7 +81,9 @@ Known fixed pins:
   - V4 no longer reports `RADIO_PLAYING` after only one I2S write. It now
     requires decoded pre-roll frames plus several good PCM writes.
 - `main/APP/board_audio.c`
-  - Verified hardware layer. Do not edit during stream debugging.
+  - Verified hardware layer. The successful headless build uses GPIO10 as
+    I2S DOUT to ES8388 DSDIN and GPIO14 as I2S DIN from ES8388 ASDOUT.
+    Do not swap these when debugging streams.
 - `components/BSP/ES8388/`
   - ES8388 driver used by `board_audio.c`.
 
@@ -129,7 +131,23 @@ Known fixed pins:
    still alive, two tasks can fight over the same audio path. V4 waits longer
    for stop and refuses to start a new player if the old one is still running.
 
-8. COM12 left busy by monitor
+8. ES8388 SDIN / SDOUT direction
+
+   The schematic labels are from the ES8388 side. `I2S_SDIN` is data input
+   into ES8388, so ESP32 playback must drive it as I2S DOUT on GPIO10.
+   `I2S_SDOUT` is ES8388 ADC data output, so it is ESP32 I2S DIN on GPIO14.
+   A bad build had these reversed in `board_audio.c`, which made headless
+   playback fail even though the rest of the audio path was close.
+
+## Last Known Good
+
+- Date: 2026-05-25
+- Port used for hardware flash test: `/dev/cu.usbserial-21230`
+- Hardware: DNESP32S3 4.3 inch RGB LCD board, onboard ES8388 path
+- Result: build, flash, and headless radio playback succeeded after fixing
+  GPIO10/14 I2S data direction in `main/APP/board_audio.c`.
+
+9. COM12 left busy by monitor
 
    `idf.py monitor` can keep COM12 open after a timeout. If flash says
    `PermissionError(13, refused access)`, find and stop only the stale COM12

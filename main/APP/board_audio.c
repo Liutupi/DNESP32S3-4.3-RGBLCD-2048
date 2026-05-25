@@ -22,8 +22,8 @@
 #define I2S_MCLK_GPIO GPIO_NUM_3
 #define I2S_BCLK_GPIO GPIO_NUM_46
 #define I2S_LRCK_GPIO GPIO_NUM_9
-#define I2S_DOUT_GPIO GPIO_NUM_14
-#define I2S_DIN_GPIO GPIO_NUM_10
+#define I2S_DOUT_GPIO GPIO_NUM_10 /* ESP32 TX -> ES8388 DSDIN */
+#define I2S_DIN_GPIO GPIO_NUM_14  /* ESP32 RX <- ES8388 ASDOUT */
 
 static i2s_chan_handle_t s_tx_handle;
 static bool s_i2s_started;
@@ -127,7 +127,7 @@ esp_err_t board_audio_i2s_start(int sample_rate)
     s_i2s_started = true;
     s_i2s_rate = sample_rate;
     s_i2s_write_log_count = 0;
-    ESP_LOGI(TAG, "I2S_INIT_OK mclk=3 bclk=46 lrck=9 dout=14 din=10");
+    ESP_LOGI(TAG, "I2S_INIT_OK mclk=3 bclk=46 lrck=9 dout=10(ES8388_DSDIN) din=14(ES8388_ASDOUT)");
     return ESP_OK;
 }
 

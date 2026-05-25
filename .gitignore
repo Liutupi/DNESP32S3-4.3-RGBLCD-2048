@@ -1,5 +1,6 @@
 build/
 managed_components/
+._*
 *.old
 sdkconfig.old
 dependencies.lock
