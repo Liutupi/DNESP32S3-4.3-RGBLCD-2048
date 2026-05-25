@@ -80,6 +80,8 @@ Known fixed pins:
     absolute sample value, and peak.
   - V4 no longer reports `RADIO_PLAYING` after only one I2S write. It now
     requires decoded pre-roll frames plus several good PCM writes.
+  - Headless playback applies `RADIO_PCM_GAIN_Q15` before I2S writes. Keep
+    this below full scale if the speaker sounds clipped.
 - `main/APP/board_audio.c`
   - Verified hardware layer. The successful headless build uses GPIO10 as
     I2S DOUT to ES8388 DSDIN and GPIO14 as I2S DIN from ES8388 ASDOUT.
@@ -152,6 +154,14 @@ Known fixed pins:
    `idf.py monitor` can keep COM12 open after a timeout. If flash says
    `PermissionError(13, refused access)`, find and stop only the stale COM12
    monitor/esptool processes, then flash again.
+
+10. Speaker clipping / overload
+
+   `RADIO_HEADLESS_VOLUME` is an ES8388 output volume value with 33 as the
+   driver clamp. Full scale can overload the small onboard speaker path and
+   sound like clipping. The current balanced starting point is volume 28 plus
+   `RADIO_PCM_GAIN_Q15` at 0.85x in `radio_player.c`. If clipping returns,
+   first lower the PCM gain before lowering codec volume.
 
 ## Latest User-Visible Symptom
 

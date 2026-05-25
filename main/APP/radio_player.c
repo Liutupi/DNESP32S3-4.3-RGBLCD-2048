@@ -34,6 +34,7 @@
 #define RADIO_PLAY_GOOD_FRAMES_BEFORE_ANNOUNCE 8
 #define RADIO_STOP_WAIT_MS 5000
 #define RADIO_STOP_POLL_MS 20
+#define RADIO_PCM_GAIN_Q15 27853 /* 0.85x headroom to reduce speaker/codec clipping */
 
 typedef struct {
     char name[64];
@@ -315,6 +316,17 @@ static uint32_t pcm_average_abs(const int16_t *samples, size_t sample_count, uin
     return sample_count ? (uint32_t)(total / sample_count) : 0;
 }
 
+static void apply_pcm_output_gain(int16_t *samples, size_t sample_count)
+{
+    if (!samples || sample_count == 0 || RADIO_PCM_GAIN_Q15 == 32768) {
+        return;
+    }
+    for (size_t i = 0; i < sample_count; ++i) {
+        int32_t scaled = ((int32_t)samples[i] * RADIO_PCM_GAIN_Q15) >> 15;
+        samples[i] = (int16_t)scaled;
+    }
+}
+
 static void log_decoded_frame(uint32_t frame_index, uint32_t consumed,
                               uint32_t decoded_size, const esp_audio_dec_info_t *info,
                               const uint8_t *pcm)
@@ -383,6 +395,7 @@ static bool write_pcm_frame(player_task_arg_t *arg, uint8_t *pcm, uint32_t decod
         }
         samples *= 2;
     }
+    apply_pcm_output_gain(pcm16, samples);
     if (!board_audio_i2s_write(pcm16, samples)) {
         set_last_error(arg, "no_i2s_write");
         ESP_LOGW(TAG, "RADIO_URL_FAILED reason=no_i2s_write");
