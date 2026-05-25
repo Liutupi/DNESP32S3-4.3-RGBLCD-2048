@@ -2281,6 +2281,18 @@ static void start_weather_task_once(void)
     xTaskCreate(weather_task, "tomato_weather", 12288, NULL, 4, NULL);
 }
 
+void tomato_network_start(void)
+{
+    if (!g_weather_mutex) g_weather_mutex = xSemaphoreCreateMutex();
+    start_wifi_once();
+}
+
+bool tomato_network_has_configured_wifi(void)
+{
+    load_wifi_credentials_once();
+    return has_text(g_wifi_ssid);
+}
+
 void tomato_timer_start(void)
 {
     if (!g_weather_mutex) g_weather_mutex = xSemaphoreCreateMutex();

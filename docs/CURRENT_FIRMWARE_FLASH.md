@@ -12,8 +12,8 @@ building or flashing this repository.
 - Board: DNESP32S3 4.3-inch RGB LCD, 16 MB flash, 8 MB PSRAM
 - Last known macOS port used successfully: `/dev/cu.usbserial-21230`
 - Common Windows port from earlier testing: `COM12`
-- Latest verified app binary size: `0x1cc0e0`
-- Latest verified free app partition space: `0x23f20`
+- Latest verified app binary size: `0x1cc250`
+- Latest verified free app partition space: `0x23db0`
 
 Always clone or copy the project into a short ASCII-only path before building.
 Avoid Chinese characters or long paths when using ESP-IDF on Windows.
@@ -60,6 +60,12 @@ The current firmware intentionally keeps these apps:
 - Tomato
 - Radio
 
+Networking is started globally during boot through `main/APP/app_network.c`.
+The top-right menu status replaces the old `800x480 . TOUCH . SD` text and
+shows WiFi setup/connecting/connected RSSI state. Tomato still owns the WiFi
+setup UI and saved credential storage, but the board now attempts to connect
+before the user opens Tomato.
+
 The Bird Launcher and Racing modules were intentionally removed from the build
 and menu. Do not re-add them unless the user explicitly asks for them.
 
@@ -93,7 +99,8 @@ ESP32 transmits audio on GPIO10 into ES8388 SDIN. Do not swap GPIO10 and GPIO14.
 ## Known Good Radio Flow
 
 1. Boot to WarmOS menu.
-2. Connect WiFi in Tomato if needed.
+2. Wait for the top-right WiFi state to connect. If it shows setup/no saved
+   network, open Tomato once and save WiFi credentials.
 3. Tap `Radio`.
 4. Speaker self-test runs.
 5. Visible stream diagnostics run before headless playback.

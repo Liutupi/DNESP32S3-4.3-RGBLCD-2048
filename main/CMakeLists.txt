@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "APP/app_network.c"
         "APP/board_audio.c"
         "APP/boot_ui.c"
         "APP/game2048.c"

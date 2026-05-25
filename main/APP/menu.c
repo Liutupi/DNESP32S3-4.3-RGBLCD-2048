@@ -6,6 +6,7 @@
  */
 
 #include "menu.h"
+#include "app_network.h"
 #include "boot_ui.h"
 #include "game2048.h"
 #include "reaction_test.h"
@@ -13,6 +14,7 @@
 #include "tomato_timer.h"
 #include "flip_clock.h"
 #include "radio_headless.h"
+#include "esp_wifi.h"
 #include <stdio.h>
 
 #define SCREEN_W        800
@@ -72,6 +74,8 @@ static lv_obj_t *g_react_card = NULL;
 static lv_obj_t *g_tomato_card = NULL;
 static lv_obj_t *g_flip_card = NULL;
 static lv_obj_t *g_radio_card = NULL;
+static lv_obj_t *g_network_label = NULL;
+static lv_timer_t *g_network_timer = NULL;
 static lv_coord_t g_press_x = 0;
 static lv_coord_t g_press_y = 0;
 static menu_app_t g_pressed_app = APP_NONE;
@@ -147,6 +151,34 @@ static void menu_ready_timer_cb(lv_timer_t *timer)
     lv_timer_del(timer);
 }
 
+static void update_network_status_label(void)
+{
+    if (!g_network_label) return;
+
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        char buf[40];
+        snprintf(buf, sizeof(buf), LV_SYMBOL_WIFI "  %ddBm", (int)ap.rssi);
+        lv_label_set_text(g_network_label, buf);
+        lv_obj_set_style_text_color(g_network_label, lv_color_hex(0x8FE38F), 0);
+        return;
+    }
+
+    if (app_network_has_configured_wifi()) {
+        lv_label_set_text(g_network_label, LV_SYMBOL_WIFI "  Connecting");
+        lv_obj_set_style_text_color(g_network_label, lv_color_hex(COL_ACCENT), 0);
+    } else {
+        lv_label_set_text(g_network_label, LV_SYMBOL_WIFI "  Setup");
+        lv_obj_set_style_text_color(g_network_label, lv_color_hex(COL_TEXT_SOFT), 0);
+    }
+}
+
+static void network_status_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    update_network_status_label();
+}
+
 static void create_background(lv_obj_t *parent)
 {
     lv_obj_set_style_bg_color(parent, lv_color_hex(COL_BG), 0);
@@ -168,8 +200,12 @@ static lv_obj_t *create_header(lv_obj_t *parent)
     lv_obj_t *sub = create_label(header, "Good evening, Tupi", &lv_font_montserrat_16, COL_TEXT_SOFT);
     lv_obj_set_pos(sub, 50, 82);
 
-    lv_obj_t *state = create_label(header, "800x480 . TOUCH . SD", &lv_font_montserrat_14, COL_TEXT_SOFT);
-    lv_obj_set_pos(state, 560, 48);
+    g_network_label = create_label(header, LV_SYMBOL_WIFI "  Starting", &lv_font_montserrat_14, COL_TEXT_SOFT);
+    lv_obj_set_width(g_network_label, 190);
+    lv_obj_set_style_text_align(g_network_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(g_network_label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_pos(g_network_label, 560, 48);
+    update_network_status_label();
 
     return header;
 }
@@ -410,6 +446,11 @@ void menu_start(void)
         lv_obj_del(g_menu_root);
         g_menu_root = NULL;
     }
+    if (g_network_timer) {
+        lv_timer_del(g_network_timer);
+        g_network_timer = NULL;
+    }
+    g_network_label = NULL;
 
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
 
@@ -441,6 +482,7 @@ void menu_start(void)
 
     lv_timer_t *ready_timer = lv_timer_create(menu_ready_timer_cb, 1000, NULL);
     lv_timer_set_repeat_count(ready_timer, 1);
+    g_network_timer = lv_timer_create(network_status_timer_cb, 1000, NULL);
 }
 
 void menu_go_back(void)
