@@ -20,37 +20,39 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdio.h>
+#include <time.h>
 
 #define SCREEN_W        800
 #define SCREEN_H        480
 
-#define COL_BG          0x140D0A
-#define COL_BG_2        0x24140E
-#define COL_GLOW        0xC46A2A
-#define COL_GLOW_2      0x8E3B22
-#define COL_CARD        0x2A1A14
-#define COL_CARD_2      0x362219
-#define COL_TEXT        0xFFF2DC
-#define COL_TEXT_SOFT   0xB98A68
-#define COL_ACCENT      0xE58A3A
-#define COL_ACCENT_2    0xD95E3F
+#define COL_BG          0x3D2B18
+#define COL_BG_2        0x4E3720
+#define COL_GLOW        0xE8A040
+#define COL_GLOW_2      0xC87838
+#define COL_CARD        0x4E3720
+#define COL_CARD_2      0x5E4228
+#define COL_TEXT        0xFFF1D6
+#define COL_TEXT_SOFT   0xD4B896
+#define COL_ACCENT      0xF0B050
+#define COL_ACCENT_2    0xE89840
+#define COL_CLOCK       0xF0B050
 
 #define HEADER_X         48
 #define HEADER_Y         32
 
-#define PHOTO_X          70
+#define PHOTO_X          48
 #define PHOTO_Y         135
-#define PHOTO_W         340
+#define PHOTO_W         344
 #define PHOTO_H         190
 
-#define FLIP_X          450
+#define FLIP_X          408
 #define FLIP_Y          135
-#define FLIP_W          280
+#define FLIP_W          344
 #define FLIP_H          190
 
-#define DOCK_Y          360
+#define DOCK_Y          366
 #define DOCK_W          106
-#define DOCK_H           72
+#define DOCK_H           78
 
 #define DOCK_2048_X      92
 #define DOCK_REACT_X    254
@@ -84,6 +86,9 @@ static lv_coord_t g_press_x = 0;
 static lv_coord_t g_press_y = 0;
 static menu_app_t g_pressed_app = APP_NONE;
 static bool g_menu_ready = false;
+static lv_obj_t *g_greeting_label = NULL;
+static lv_timer_t *g_greeting_timer = NULL;
+static lv_obj_t *g_bg_glow[3] = {NULL, NULL, NULL};
 
 extern lv_obj_t *debug_label;
 
@@ -155,6 +160,55 @@ static void menu_ready_timer_cb(lv_timer_t *timer)
     lv_timer_del(timer);
 }
 
+static const char *get_greeting(int hour)
+{
+    if (hour >= 6 && hour < 12)  return "早上好，Tupi";
+    if (hour >= 12 && hour < 18) return "下午好，Tupi";
+    return "晚上好，Tupi";
+}
+
+static void update_greeting_label(void)
+{
+    if (!g_greeting_label) return;
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+
+    if (tm_now.tm_year < 124) {
+        ui_text_set(g_greeting_label, "你好呀，Tupi");
+        return;
+    }
+
+    ui_text_set(g_greeting_label, get_greeting(tm_now.tm_hour));
+}
+
+static void greeting_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    update_greeting_label();
+}
+
+static lv_obj_t *g_flip_clock_preview = NULL;
+
+static void update_clock_preview(void)
+{
+    if (!g_flip_clock_preview) return;
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+
+    if (tm_now.tm_year < 124) {
+        ui_text_set(g_flip_clock_preview, "--:--");
+        return;
+    }
+
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02d:%02d", tm_now.tm_hour, tm_now.tm_min);
+    ui_text_set(g_flip_clock_preview, buf);
+}
+
 static void update_network_status_label(void)
 {
     if (!g_network_label) return;
@@ -181,17 +235,39 @@ static void network_status_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
     update_network_status_label();
+    update_clock_preview();
+}
+
+static void bg_glow_opa_cb(void *obj, int32_t v)
+{
+    lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
+}
+
+static void start_glow_breath(lv_obj_t *obj, lv_opa_t lo, lv_opa_t hi, uint32_t ms, uint32_t delay)
+{
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, obj);
+    lv_anim_set_exec_cb(&a, bg_glow_opa_cb);
+    lv_anim_set_values(&a, lo, hi);
+    lv_anim_set_time(&a, ms);
+    lv_anim_set_playback_time(&a, ms);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_delay(&a, delay);
+    lv_anim_start(&a);
 }
 
 static void create_background(lv_obj_t *parent)
 {
     lv_obj_set_style_bg_color(parent, lv_color_hex(COL_BG), 0);
 
-    create_panel(parent, 210, 150, 390, 210, COL_BG_2, LV_OPA_30, 18);
+    g_bg_glow[0] = create_panel(parent, 210, 150, 390, 210, COL_BG_2, LV_OPA_30, 18);
+    g_bg_glow[1] = create_panel(parent, 560, -150, 300, 210, COL_GLOW, LV_OPA_20, 42);
+    g_bg_glow[2] = create_panel(parent, -120, 330, 280, 130, COL_GLOW_2, LV_OPA_20, 42);
 
-    create_panel(parent, 560, -150, 300, 210, COL_GLOW, LV_OPA_20, 42);
-
-    create_panel(parent, -120, 330, 280, 130, COL_GLOW_2, LV_OPA_20, 42);
+    start_glow_breath(g_bg_glow[0], LV_OPA_20, LV_OPA_40, 4000, 0);
+    start_glow_breath(g_bg_glow[1], LV_OPA_10, LV_OPA_30, 5000, 800);
+    start_glow_breath(g_bg_glow[2], LV_OPA_10, LV_OPA_30, 4500, 1600);
 }
 
 static lv_obj_t *create_header(lv_obj_t *parent)
@@ -201,10 +277,12 @@ static lv_obj_t *create_header(lv_obj_t *parent)
     lv_obj_t *title = create_label(header, "WarmOS", &lv_font_montserrat_48, COL_TEXT);
     lv_obj_set_pos(title, HEADER_X, HEADER_Y);
 
-    lv_obj_t *sub = create_label(header, "晚上好，Tupi", UI_FONT_CN_16, COL_TEXT_SOFT);
-    lv_obj_set_pos(sub, 50, 82);
+    g_greeting_label = create_label(header, "你好呀，Tupi", UI_FONT_CN_20, COL_TEXT_SOFT);
+    lv_obj_set_pos(g_greeting_label, 50, 82);
 
-    g_network_label = create_label(header, "WiFi  启动中", UI_FONT_CN_16, COL_TEXT_SOFT);
+    update_greeting_label();
+
+    g_network_label = create_label(header, "WiFi  启动中", UI_FONT_CN_20, COL_TEXT_SOFT);
     lv_obj_set_width(g_network_label, 190);
     lv_obj_set_style_text_align(g_network_label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(g_network_label, LV_LABEL_LONG_CLIP);
@@ -223,15 +301,15 @@ static lv_obj_t *create_main_photo_card(lv_obj_t *parent)
     lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_border_opa(card, LV_OPA_30, 0);
 
-    create_panel(card, 224, -34, 118, 118, COL_GLOW, LV_OPA_20, 36);
+    create_panel(card, 228, -34, 118, 118, COL_GLOW, LV_OPA_20, 36);
 
-    lv_obj_t *title = create_label(card, "相册", UI_FONT_CN_20, COL_TEXT);
+    lv_obj_t *title = create_label(card, "相册", UI_FONT_CN_24, COL_TEXT);
     lv_obj_set_pos(title, 34, 48);
 
-    lv_obj_t *sub = create_label(card, "从 SD 卡浏览照片", UI_FONT_CN_16, COL_TEXT_SOFT);
+    lv_obj_t *sub = create_label(card, "从 SD 卡浏览照片", UI_FONT_CN_20, COL_TEXT_SOFT);
     lv_obj_set_pos(sub, 36, 94);
 
-    lv_obj_t *hint = create_label(card, "点击打开", UI_FONT_CN_16, COL_ACCENT);
+    lv_obj_t *hint = create_label(card, "点击打开", UI_FONT_CN_20, COL_ACCENT);
     lv_obj_set_pos(hint, 36, 134);
 
     return card;
@@ -246,17 +324,21 @@ static lv_obj_t *create_flip_clock_card(lv_obj_t *parent)
     lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT_2), 0);
     lv_obj_set_style_border_opa(card, LV_OPA_30, 0);
 
-    create_panel(card, 186, -26, 94, 94, COL_ACCENT_2, LV_OPA_20, 34);
+    create_panel(card, 250, -26, 94, 94, COL_ACCENT_2, LV_OPA_20, 34);
     create_panel(card, 28, 30, 10, 10, COL_ACCENT, LV_OPA_COVER, 5);
 
-    lv_obj_t *title = create_label(card, "翻页时钟", UI_FONT_CN_20, COL_TEXT);
+    lv_obj_t *title = create_label(card, "翻页时钟", UI_FONT_CN_24, COL_TEXT);
     lv_obj_set_pos(title, 34, 46);
 
-    lv_obj_t *sub = create_label(card, "暖色桌面时钟", UI_FONT_CN_16, COL_TEXT_SOFT);
+    lv_obj_t *sub = create_label(card, "暖色桌面时钟", UI_FONT_CN_20, COL_TEXT_SOFT);
     lv_obj_set_pos(sub, 36, 94);
 
-    lv_obj_t *hint = create_label(card, "点击打开", UI_FONT_CN_16, COL_ACCENT);
+    lv_obj_t *hint = create_label(card, "点击打开", UI_FONT_CN_20, COL_ACCENT);
     lv_obj_set_pos(hint, 36, 138);
+
+    g_flip_clock_preview = create_label(card, "--:--", UI_FONT_DIGIT_48, COL_CLOCK);
+    lv_obj_set_pos(g_flip_clock_preview, 196, 68);
+    update_clock_preview();
 
     return card;
 }
@@ -271,12 +353,12 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x, const char *ti
 
     create_panel(card, 18, 15, 8, 8, accent, LV_OPA_COVER, 4);
 
-    lv_obj_t *title_label = create_label(card, title, UI_FONT_CN_16, COL_TEXT);
+    lv_obj_t *title_label = create_label(card, title, UI_FONT_CN_20, COL_TEXT);
     lv_obj_set_pos(title_label, 18, 27);
     lv_obj_set_width(title_label, DOCK_W - 28);
     lv_label_set_long_mode(title_label, LV_LABEL_LONG_CLIP);
 
-    lv_obj_t *sub_label = create_label(card, subtitle, UI_FONT_CN_16, COL_TEXT_SOFT);
+    lv_obj_t *sub_label = create_label(card, subtitle, UI_FONT_CN_20, COL_TEXT_SOFT);
     lv_obj_set_pos(sub_label, 20, 52);
     lv_obj_set_width(sub_label, DOCK_W - 32);
     lv_label_set_long_mode(sub_label, LV_LABEL_LONG_CLIP);
@@ -294,13 +376,10 @@ static void create_dock(lv_obj_t *parent)
 
 static lv_obj_t *create_footer(lv_obj_t *parent)
 {
-    lv_obj_t *footer = create_panel(parent, 0, 432, SCREEN_W, 48, COL_BG, LV_OPA_TRANSP, 0);
+    lv_obj_t *footer = create_panel(parent, 0, 444, SCREEN_W, 36, COL_BG, LV_OPA_TRANSP, 0);
 
-    lv_obj_t *left = create_label(footer, "轻点进入应用", UI_FONT_CN_16, COL_TEXT_SOFT);
-    lv_obj_set_pos(left, 48, 10);
-
-    lv_obj_t *right = create_label(footer, "DNESP32S3 / Tupi 制作", UI_FONT_CN_16, COL_TEXT_SOFT);
-    lv_obj_set_pos(right, 560, 10);
+    lv_obj_t *right = create_label(footer, "DNESP32S3 · Tupi 制作", UI_FONT_CN_20, COL_TEXT_SOFT);
+    lv_obj_set_pos(right, 560, 6);
 
     return footer;
 }
@@ -359,7 +438,7 @@ static void set_card_feedback(menu_app_t app, bool active)
     if (!card) return;
 
     lv_obj_set_style_bg_color(card, lv_color_hex(active ? COL_CARD_2 : COL_CARD), 0);
-    lv_obj_set_style_border_opa(card, active ? LV_OPA_60 : LV_OPA_30, 0);
+    lv_obj_set_style_border_opa(card, active ? LV_OPA_80 : LV_OPA_30, 0);
 }
 
 static void launch_app(menu_app_t app)
@@ -454,7 +533,12 @@ void menu_start(void)
         lv_timer_del(g_network_timer);
         g_network_timer = NULL;
     }
+    if (g_greeting_timer) {
+        lv_timer_del(g_greeting_timer);
+        g_greeting_timer = NULL;
+    }
     g_network_label = NULL;
+    g_flip_clock_preview = NULL;
 
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
 
@@ -492,6 +576,7 @@ void menu_start(void)
     lv_timer_t *ready_timer = lv_timer_create(menu_ready_timer_cb, 1000, NULL);
     lv_timer_set_repeat_count(ready_timer, 1);
     g_network_timer = lv_timer_create(network_status_timer_cb, 1000, NULL);
+    g_greeting_timer = lv_timer_create(greeting_timer_cb, 30000, NULL);
 }
 
 void menu_go_back(void)
