@@ -1,6 +1,6 @@
 # DNESP32S3 4.3 RGBLCD Headless ES8388 Radio Handoff
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 This file is the current handoff for the onboard ES8388 network radio work.
 Read this first before continuing the next debugging session.
@@ -8,15 +8,23 @@ Read this first before continuing the next debugging session.
 ## Current Repository State
 
 - GitHub repo: `https://github.com/Liutupi/DNESP32S3-4.3-RGBLCD-2048.git`
-- Active local build path: `C:\espbuild\dnesp32s3-2048-radio`
+- Current source of truth for build/flash: `docs/CURRENT_FIRMWARE_FLASH.md`
+- Active local macOS build path:
+  `/Volumes/liutupi/DNESP32S3-4.3-RGBLCD-2048`
+- Recommended Windows build path: `C:\espbuild\dnesp32s3-2048-radio`
 - Original materials path: the DNESP32S3 vendor materials directory on `D:`;
   use the short ASCII build path above for ESP-IDF commands.
-- Serial port used for the latest flash: `COM12`
+- Serial port used for the latest successful macOS flash: `/dev/cu.usbserial-21230`
+- Earlier Windows serial port: `COM12`
 - Build command: `idf.py build`
-- Flash command: `idf.py -p COM12 -b 460800 flash`
+- Flash command on macOS: `idf.py -p /dev/cu.usbserial-21230 -b 460800 flash`
 - Latest flashed radio tags: `SELFTEST V4`, `STREAMDIAG V4`, `STREAMPLAY V4`
 
-The latest V4 build was compiled successfully and flashed to `COM12`.
+The latest V4 build was compiled successfully and flashed to
+`/dev/cu.usbserial-21230`.
+
+Bird Launcher and Racing were removed from the current main branch. Do not
+re-add those modules unless the user explicitly asks for them.
 
 ## Active Audio Strategy
 
@@ -263,10 +271,19 @@ idf.py build
 idf.py -p COM12 -b 460800 flash
 ```
 
+macOS:
+
+```bash
+cd /Volumes/liutupi/DNESP32S3-4.3-RGBLCD-2048
+. ~/esp/esp-idf-v5.5/export.sh
+idf.py build
+idf.py -p /dev/cu.usbserial-21230 -b 460800 flash
+```
+
 Latest local verification before this handoff:
 
 - `idf.py build`: passed.
-- `idf.py -p COM12 -b 460800 flash`: passed.
+- `idf.py -p /dev/cu.usbserial-21230 -b 460800 flash`: passed.
 - Flash target: ESP32-S3, MAC `14:c1:9f:42:2f:94`.
-- App binary size: about `0x1cfc80`, app partition still has about `0x20380`
-  bytes free.
+- App binary size after removing Bird/Racing: about `0x1cc0e0`, app partition
+  has about `0x23f20` bytes free.

@@ -1,9 +1,13 @@
 # DNESP32S3 Game Center
 
+Current firmware / build / flash handoff for humans and other AI agents:
+`docs/CURRENT_FIRMWARE_FLASH.md`.
+
 Current onboard ES8388 headless Network Radio handoff:
 `docs/RADIO_HEADLESS_HANDOFF.md`.
 
-基于 **正点原子 DNESP32S3** 开发板的触屏小游戏集合，带分级菜单。
+基于 **正点原子 DNESP32S3** 开发板的触屏应用集合，带 WarmOS 主菜单和
+板载 ES8388 无头网络电台。
 
 | 项目 | 说明 |
 |------|------|
@@ -28,7 +32,9 @@ Current onboard ES8388 headless Network Radio handoff:
 │       ├── lvgl_demo.c / .h    # LVGL 移植层：显示、触摸、时基
 │       ├── menu.c / .h         # 主菜单（分级选择游戏）
 │       ├── game2048.c / .h     # 2048 游戏逻辑与 UI
-│       ├── reaction_test.c / .h # 反应速度测试游戏
+│       ├── reaction_test.c / .h # 反应速度测试
+│       ├── radio_headless.c / .h # ES8388 无头网络电台
+│       ├── radio_player.c / .h # HTTP/MP3 解码与 I2S 写入
 │       └── (依赖 components/BSP 中的 LCD/TOUCH 驱动)
 ├── components/
 │   └── BSP/                    # 正点原子 BSP（RGB LCD、GT9xxx、XL9555 等）
@@ -75,6 +81,16 @@ idf.py build
 ```powershell
 idf.py -p COM10 flash
 ```
+
+macOS 上最近验证过的串口是：
+
+```bash
+. ~/esp/esp-idf-v5.5/export.sh
+idf.py -p /dev/cu.usbserial-21230 -b 460800 flash
+```
+
+更完整、给其他模型交接用的刷机说明见
+`docs/CURRENT_FIRMWARE_FLASH.md`。
 
 ### 4. 查看串口日志
 ```powershell
@@ -168,6 +184,11 @@ bool lv_obj_hit_test(lv_obj_t * obj, const lv_point_t * point)
 | **2048** | `game2048.c/h` | 在 4×4 棋盘上滑动合并数字方块，达到 2048 即胜利 |
 | **Reaction Test** | `reaction_test.c/h` | 等待屏幕变绿后尽快点击，测试反应速度（毫秒级） |
 | **Photo Viewer** ⭐ | `photoviewer.c/h` | 从 SD 卡读取 JPEG 幻灯片播放，支持触摸切换、自动轮播 |
+| **Flip Clock** | `flip_clock.c/h` | 桌面翻页时钟 |
+| **Tomato** | `tomato_timer.c/h` | 番茄钟与联网信息 |
+| **Radio** | `radio_headless.c/h`, `radio_player.c/h` | 板载 ES8388 无头网络电台 |
+
+Bird Launcher 和 Racing 已从当前 main 分支删除，不再编译也不再出现在菜单中。
 
 主菜单 `menu.c/h` 启动后显示 Game & Photo Center，触摸卡片选择应用。每个应用内有 "Back" 按钮可返回。
 
@@ -175,7 +196,7 @@ bool lv_obj_hit_test(lv_obj_t * obj, const lv_point_t * point)
 
 | 限制 | 说明 |
 |------|------|
-| 音频 | 与 4.3" RGB LCD 引脚冲突，不可用 |
+| 音频 | 与 4.3" RGB LCD 引脚冲突；Radio 会先关闭/释放 LCD，再进入 headless 播放 |
 | 触摸 | 仅支持单点触摸（GT9xxx 已配置为单点模式） |
 | 存储 | 2048/Reaction 纯内存运行；Photo Viewer 依赖 SD 卡 |
 | 最佳分数 | 未做 NVS 持久化，复位后清零 |

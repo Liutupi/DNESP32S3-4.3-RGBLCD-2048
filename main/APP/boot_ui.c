@@ -8,14 +8,13 @@
 #include "boot_ui.h"
 #include "game2048.h"
 #include "reaction_test.h"
-#include "bird_launcher.h"
 #include "photoviewer.h"
 #include "tomato_timer.h"
 #include "lvgl.h"
 
 #define BOOT_UI_W              800
 #define BOOT_UI_HEIGHT         480
-#define BOOT_UI_CARD_COUNT       5
+#define BOOT_UI_CARD_COUNT       4
 #define BOOT_UI_CENTER_X       400
 #define BOOT_UI_CARD_Y         132
 #define BOOT_UI_CARD_W         444
@@ -46,8 +45,6 @@ static const boot_ui_card_info_t s_boot_ui_cards[BOOT_UI_CARD_COUNT] = {
      LV_COLOR_MAKE(0x20, 0xE7, 0xFF), LV_COLOR_MAKE(0x7B, 0x2C, 0xFF), game2048_start},
     {"Reaction Test", "REFLEX LAB", "Tap when the signal turns green.",
      LV_COLOR_MAKE(0x26, 0xFF, 0x90), LV_COLOR_MAKE(0x00, 0xA8, 0xFF), reaction_test_start},
-    {"Bird Launcher", "ARCADE LAUNCH", "Drag, aim, and release.",
-     LV_COLOR_MAKE(0xFF, 0xC8, 0x2E), LV_COLOR_MAKE(0xFF, 0x3D, 0x81), bird_launcher_start},
     {"Photo Viewer", "SD GALLERY", "Browse photos from the SD card.",
      LV_COLOR_MAKE(0x6C, 0xFF, 0xE8), LV_COLOR_MAKE(0x00, 0x84, 0xFF), photoviewer_start},
     {"Tomato Glow", "FOCUS CLOCK", "Timer, weather, and desk glow.",

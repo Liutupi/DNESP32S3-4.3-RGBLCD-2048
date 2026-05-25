@@ -11,7 +11,8 @@
 - **MAC**: 14:c1:9f:42:2f:94
 
 ### 串口连接
-- **设备路径**: `/dev/cu.usbserial-21220`
+- **最近验证设备路径**: `/dev/cu.usbserial-21230`
+- **旧记录设备路径**: `/dev/cu.usbserial-21220`
 - **波特率**: 115200 (刷机用 460800)
 - **USB芯片**: CH340 (VID:PID=1A86:7523)
 - **复位方式**: DTR 拉低再拉高可触发硬件复位
@@ -87,8 +88,11 @@
 - MCLK: IO3
 - LRCK/WS: IO9
 - BCLK/SCK: IO46
-- SDOUT(喇叭): IO14
-- SDIN(麦克风): IO10
+- ES8388 SDIN / DSDIN: IO10，ESP32-S3 作为 I2S DOUT 输出到 ES8388，用于喇叭播放
+- ES8388 SDOUT / ASDOUT: IO14，ESP32-S3 作为 I2S DIN 从 ES8388 输入
+
+注意：原理图信号名是站在 ES8388 角度命名。做喇叭播放时，ESP32 必须从
+GPIO10 输出音频到 ES8388 SDIN，不要把 GPIO10 和 GPIO14 反接或在代码里互换。
 
 ### 其他功能引脚
 | 功能 | GPIO | 说明 |
@@ -138,6 +142,20 @@ DNESP32S3 的 **RGB LCD 和音频不能同时使用**，以下引脚被共享：
 ### 环境激活（每次新终端必需）
 ```bash
 source ~/esp/esp-idf-v5.5/export.sh
+```
+
+### 当前仓库固件（DNESP32S3-4.3-RGBLCD-2048）
+```bash
+cd /Volumes/liutupi/DNESP32S3-4.3-RGBLCD-2048
+source ~/esp/esp-idf-v5.5/export.sh
+idf.py set-target esp32s3
+idf.py build
+idf.py -p /dev/cu.usbserial-21230 -b 460800 flash
+```
+
+如果串口号不同：
+```bash
+ls /dev/cu.* | grep -E 'usb|wch|serial|SLAB|ACM|modem'
 ```
 
 ### 小智AI工程 (ATK-4384 RGB LCD版)

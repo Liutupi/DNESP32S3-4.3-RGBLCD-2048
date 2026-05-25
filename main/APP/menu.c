@@ -9,10 +9,8 @@
 #include "boot_ui.h"
 #include "game2048.h"
 #include "reaction_test.h"
-#include "bird_launcher.h"
 #include "photoviewer.h"
 #include "tomato_timer.h"
-#include "racing_game.h"
 #include "flip_clock.h"
 #include "radio_headless.h"
 #include <stdio.h>
@@ -48,12 +46,10 @@
 #define DOCK_W          106
 #define DOCK_H           72
 
-#define DOCK_2048_X      31
-#define DOCK_BIRD_X     154
-#define DOCK_REACT_X    277
-#define DOCK_TOMATO_X   400
-#define DOCK_RACING_X   523
-#define DOCK_RADIO_X    646
+#define DOCK_2048_X      92
+#define DOCK_REACT_X    254
+#define DOCK_TOMATO_X   416
+#define DOCK_RADIO_X    578
 
 #define TAP_MOVE_MAX     30
 
@@ -61,10 +57,8 @@ typedef enum {
     APP_NONE = 0,
     APP_2048,
     APP_REACTION,
-    APP_BIRD,
     APP_PHOTO,
     APP_TOMATO,
-    APP_RACING,
     APP_FLIP_CLOCK,
     APP_RADIO,
 } menu_app_t;
@@ -74,10 +68,8 @@ static lv_obj_t *g_menu_root = NULL;
 static lv_obj_t *g_touch_layer = NULL;
 static lv_obj_t *g_photo_card = NULL;
 static lv_obj_t *g_2048_card = NULL;
-static lv_obj_t *g_bird_card = NULL;
 static lv_obj_t *g_react_card = NULL;
 static lv_obj_t *g_tomato_card = NULL;
-static lv_obj_t *g_racing_card = NULL;
 static lv_obj_t *g_flip_card = NULL;
 static lv_obj_t *g_radio_card = NULL;
 static lv_coord_t g_press_x = 0;
@@ -255,10 +247,8 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x, const char *ti
 static void create_dock(lv_obj_t *parent)
 {
     g_2048_card = create_dock_card(parent, DOCK_2048_X, "2048", "Puzzle", COL_ACCENT);
-    g_bird_card = create_dock_card(parent, DOCK_BIRD_X, "Bird", "Launch", COL_ACCENT);
     g_react_card = create_dock_card(parent, DOCK_REACT_X, "Reaction", "Tap test", COL_ACCENT_2);
     g_tomato_card = create_dock_card(parent, DOCK_TOMATO_X, "Tomato", "25:00", COL_ACCENT_2);
-    g_racing_card = create_dock_card(parent, DOCK_RACING_X, "Racing", "Road rush", COL_ACCENT);
     g_radio_card = create_dock_card(parent, DOCK_RADIO_X, "Radio", "Streams", COL_ACCENT_2);
 }
 
@@ -292,11 +282,6 @@ static menu_app_t hit_test(lv_coord_t x, lv_coord_t y)
         return APP_2048;
     }
 
-    if (x >= DOCK_BIRD_X && x <= DOCK_BIRD_X + DOCK_W &&
-        y >= DOCK_Y && y <= DOCK_Y + DOCK_H) {
-        return APP_BIRD;
-    }
-
     if (x >= DOCK_REACT_X && x <= DOCK_REACT_X + DOCK_W &&
         y >= DOCK_Y && y <= DOCK_Y + DOCK_H) {
         return APP_REACTION;
@@ -305,11 +290,6 @@ static menu_app_t hit_test(lv_coord_t x, lv_coord_t y)
     if (x >= DOCK_TOMATO_X && x <= DOCK_TOMATO_X + DOCK_W &&
         y >= DOCK_Y && y <= DOCK_Y + DOCK_H) {
         return APP_TOMATO;
-    }
-
-    if (x >= DOCK_RACING_X && x <= DOCK_RACING_X + DOCK_W &&
-        y >= DOCK_Y && y <= DOCK_Y + DOCK_H) {
-        return APP_RACING;
     }
 
     if (x >= DOCK_RADIO_X && x <= DOCK_RADIO_X + DOCK_W &&
@@ -325,10 +305,8 @@ static lv_obj_t *card_for_app(menu_app_t app)
     switch (app) {
         case APP_PHOTO: return g_photo_card;
         case APP_2048: return g_2048_card;
-        case APP_BIRD: return g_bird_card;
         case APP_REACTION: return g_react_card;
         case APP_TOMATO: return g_tomato_card;
-        case APP_RACING: return g_racing_card;
         case APP_FLIP_CLOCK: return g_flip_card;
         case APP_RADIO: return g_radio_card;
         default: return NULL;
@@ -353,17 +331,11 @@ static void launch_app(menu_app_t app)
         case APP_2048:
             game2048_start();
             break;
-        case APP_BIRD:
-            bird_launcher_start();
-            break;
         case APP_REACTION:
             reaction_test_start();
             break;
         case APP_TOMATO:
             tomato_timer_start();
-            break;
-        case APP_RACING:
-            racing_game_start();
             break;
         case APP_FLIP_CLOCK:
             flip_clock_start();
@@ -462,10 +434,8 @@ void menu_start(void)
     fade_slide_in_obj(photo, 150, PHOTO_Y, 250, 450);
     fade_slide_in_obj(flip, 150, FLIP_Y, 320, 450);
     fade_in_obj(g_2048_card, 500, 280);
-    fade_in_obj(g_bird_card, 600, 280);
     fade_in_obj(g_react_card, 700, 280);
     fade_in_obj(g_tomato_card, 800, 280);
-    fade_in_obj(g_racing_card, 900, 280);
     fade_in_obj(g_radio_card, 960, 280);
     fade_in_obj(footer, 760, 240);
 
