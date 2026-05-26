@@ -112,7 +112,12 @@ static lv_obj_t *mk_panel(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
     lv_obj_set_size(obj, w, h);
     lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
     lv_obj_set_style_bg_opa(obj, opa, 0);
-    lv_obj_set_style_border_width(obj, 0, 0);
+    
+    // 注入亮银半透明的 1px 细微玻璃态边框，在深色背景下营造悬浮质感
+    lv_obj_set_style_border_width(obj, 1, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_opa(obj, LV_OPA_20, 0);
+    
     lv_obj_set_style_radius(obj, radius, 0);
     lv_obj_set_style_pad_all(obj, 0, 0);
     make_passive(obj);

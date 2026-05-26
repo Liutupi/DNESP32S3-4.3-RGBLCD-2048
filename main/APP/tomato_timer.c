@@ -216,6 +216,9 @@ static int g_rounds = DEFAULT_ROUNDS;
 static int g_weather_refresh_min = DEFAULT_WEATHER_MIN;
 static int g_brightness_pct = 70;
 static int g_completed_focus = 0;
+
+static uint32_t g_theme_color = 0xFFB35C;
+static uint32_t g_theme_color_2 = 0xFFE0A8;
 static int g_remaining_s = DEFAULT_WORK_MIN * 60;
 static int g_total_s = DEFAULT_WORK_MIN * 60;
 static bool g_net_started;
@@ -355,6 +358,13 @@ static void reset_mode(timer_mode_t mode)
     g_total_s = current_duration_for_mode(mode);
     g_remaining_s = g_total_s;
     g_state = TIMER_IDLE;
+    if (mode == MODE_FOCUS) {
+        g_theme_color = 0xFFB35C;
+        g_theme_color_2 = 0xFFE0A8;
+    } else {
+        g_theme_color = 0x66C2FF;
+        g_theme_color_2 = 0xB3E0FF;
+    }
 }
 
 static void set_label(lv_obj_t *obj, const char *text)
@@ -618,7 +628,7 @@ static void update_weather_labels(void)
 static void update_round_dots(void)
 {
     for (int i = 0; i < DEFAULT_ROUNDS; ++i) {
-        uint32_t c = (i < g_completed_focus) ? C_HIGHLIGHT : C_MUTED;
+        uint32_t c = (i < g_completed_focus) ? g_theme_color : C_MUTED;
         lv_opa_t opa = (i < g_rounds) ? LV_OPA_COVER : LV_OPA_20;
         if (g_round_dots[i]) {
             lv_obj_set_style_bg_color(g_round_dots[i], lv_color_hex(c), 0);
@@ -651,14 +661,69 @@ static void update_timer_labels(void)
     snprintf(buf, sizeof(buf), "%d min focus + %d min break", g_focus_min, g_short_break_min);
     set_label(g_rhythm_label, buf);
 
-    if (g_timer_arc) lv_arc_set_value(g_timer_arc, progress);
+    if (g_timer_arc) {
+        lv_arc_set_value(g_timer_arc, progress);
+        lv_obj_set_style_arc_color(g_timer_arc, lv_color_hex(g_theme_color), LV_PART_INDICATOR);
+    }
     set_label(g_start_label, g_state == TIMER_RUNNING ? "Running" : "Start");
     set_label(g_pause_label, g_state == TIMER_PAUSED ? "Resume" : "Pause");
     update_round_dots();
 
     char total_buf[32];
     snprintf(total_buf, sizeof(total_buf), "Pomo: %d", g_total_completed_tomatoes);
-    if (g_total_tomatoes_label) set_label(g_total_tomatoes_label, total_buf);
+    if (g_total_tomatoes_label) {
+        set_label(g_total_tomatoes_label, total_buf);
+        lv_obj_set_style_text_color(g_total_tomatoes_label, lv_color_hex(g_theme_color), 0);
+    }
+}
+
+// 核心：手势阻尼圆环拖拽调时的事件处理回调函数
+static void arc_value_changed_cb(lv_event_t *e)
+{
+    lv_obj_t *arc = lv_event_get_target(e);
+    if (!arc || g_state != TIMER_IDLE) {
+        int32_t progress = 1000;
+        if (g_total_s > 0) {
+            progress = (g_remaining_s * 1000) / g_total_s;
+        }
+        lv_arc_set_value(arc, progress);
+        return;
+    }
+
+    int32_t val = lv_arc_get_value(arc);
+    int32_t min = 5 + (val * (60 - 5)) / 1000;
+    if (min < 5) min = 5;
+    if (min > 60) min = 60;
+
+    if (g_mode == MODE_FOCUS) {
+        g_focus_min = min;
+        g_total_s = g_focus_min * 60;
+        g_remaining_s = g_total_s;
+    } else if (g_mode == MODE_SHORT_BREAK) {
+        int32_t b_min = 1 + (val * (15 - 1)) / 1000;
+        if (b_min < 1) b_min = 1;
+        if (b_min > 15) b_min = 15;
+        g_short_break_min = b_min;
+        g_total_s = g_short_break_min * 60;
+        g_remaining_s = g_total_s;
+    } else if (g_mode == MODE_LONG_BREAK) {
+        int32_t lb_min = 5 + (val * (30 - 5)) / 1000;
+        if (lb_min < 5) lb_min = 5;
+        if (lb_min > 30) lb_min = 30;
+        g_long_break_min = lb_min;
+        g_total_s = g_long_break_min * 60;
+        g_remaining_s = g_total_s;
+    }
+
+    update_timer_labels();
+}
+
+static void arc_released_cb(lv_event_t *e)
+{
+    (void)e;
+    if (g_state == TIMER_IDLE) {
+        save_tomato_settings_to_nvs();
+    }
 }
 
 static void change_to_next_mode_after_completion(void)
@@ -1003,8 +1068,11 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_style_arc_width(g_timer_arc, 18, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(g_timer_arc, lv_color_hex(0x5B2A19), LV_PART_MAIN);
     lv_obj_set_style_arc_color(g_timer_arc, lv_color_hex(C_HIGHLIGHT), LV_PART_INDICATOR);
-    lv_obj_remove_style(g_timer_arc, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(g_timer_arc, LV_OBJ_FLAG_CLICKABLE);
+    
+    // 核心：开启拖拽调时手势，移除对 KNOB 的彻底消除以允许拖拽反馈，绑定手势处理函数
+    lv_obj_add_flag(g_timer_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(g_timer_arc, arc_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(g_timer_arc, arc_released_cb, LV_EVENT_RELEASED, NULL);
 
     g_mode_label = make_label(card, "Focus Mode", UI_FONT_CN_20, C_TEXT, 103, 110);
     lv_obj_set_style_text_align(g_mode_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -2393,6 +2461,19 @@ static void enter_glow_sleep_mode(void)
     lv_obj_add_flag(g_glow_sleep_cover, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(g_glow_sleep_cover, sleep_cover_clicked_cb, LV_EVENT_CLICKED, NULL);
     
+    // 核心：在倒计时文字后方层叠一个淡橙色、4000ms 周期的呼吸潮汐光晕圆盘，引导正念平静
+    lv_obj_t *glow = create_disc(g_glow_sleep_cover, 250, 90, 300, g_theme_color, 15);
+    lv_anim_t ag;
+    lv_anim_init(&ag);
+    lv_anim_set_var(&ag, glow);
+    lv_anim_set_exec_cb(&ag, anim_opa_cb);
+    lv_anim_set_values(&ag, 10, 40);
+    lv_anim_set_time(&ag, 2000);
+    lv_anim_set_playback_time(&ag, 2000);
+    lv_anim_set_repeat_count(&ag, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&ag, lv_anim_path_ease_in_out);
+    lv_anim_start(&ag);
+
     lv_obj_t *lbl_title = lv_label_create(g_glow_sleep_cover);
     ui_text_set(lbl_title, "Glow Sleep - Keep Focus");
     lv_obj_set_style_text_font(lbl_title, UI_FONT_CN_20, 0);
