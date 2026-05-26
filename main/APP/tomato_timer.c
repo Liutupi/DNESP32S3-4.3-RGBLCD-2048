@@ -657,7 +657,7 @@ static void update_timer_labels(void)
     update_round_dots();
 
     char total_buf[32];
-    snprintf(total_buf, sizeof(total_buf), "专注总量: %d", g_total_completed_tomatoes);
+    snprintf(total_buf, sizeof(total_buf), "Pomo: %d", g_total_completed_tomatoes);
     if (g_total_tomatoes_label) set_label(g_total_tomatoes_label, total_buf);
 }
 
@@ -1030,15 +1030,15 @@ static void create_main_card(lv_obj_t *scr)
     g_weather_detail_label = make_label(weather_card, "Cloudy / Humidity 68%", UI_FONT_CN_16, C_TEXT_DIM, 22, 96);
     lv_obj_set_width(g_weather_detail_label, 150);
     lv_label_set_long_mode(g_weather_detail_label, LV_LABEL_LONG_DOT);
-    g_weather_status_label = make_label(weather_card, "Local sample", UI_FONT_CN_16, C_MUTED, 22, 136);
+    g_weather_status_label = make_label(weather_card, "Local sample", UI_FONT_CN_16, C_MUTED, 22, 152);
     lv_obj_set_width(g_weather_status_label, 150);
     lv_label_set_long_mode(g_weather_status_label, LV_LABEL_LONG_DOT);
 
-    g_total_tomatoes_label = make_label(weather_card, "专注总量: 0", UI_FONT_CN_16, C_HIGHLIGHT, 176, 136);
+    g_total_tomatoes_label = make_label(weather_card, "Pomo: 0", UI_FONT_CN_16, C_HIGHLIGHT, 176, 152);
     lv_obj_set_width(g_total_tomatoes_label, 140);
 
     g_weather_scene = lv_obj_create(weather_card);
-    lv_obj_set_size(g_weather_scene, 150, 136);
+    lv_obj_set_size(g_weather_scene, 150, 110);
     lv_obj_set_pos(g_weather_scene, 176, 22);
     lv_obj_set_style_bg_opa(g_weather_scene, LV_OPA_0, 0);
     lv_obj_set_style_border_width(g_weather_scene, 0, 0);
