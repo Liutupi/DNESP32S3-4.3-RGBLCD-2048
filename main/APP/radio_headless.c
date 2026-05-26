@@ -21,13 +21,60 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_netif.h"
 
 #define TAG "RADIO_HEADLESS"
+#define LED_GPIO GPIO_NUM_1
+
+static int64_t s_connecting_start_time_ms = 0;
+static radio_player_state_t s_current_player_state = RADIO_PLAYER_IDLE;
+
+static void led_init(void)
+{
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << LED_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+}
+
+static void led_set(bool on)
+{
+    gpio_set_level(LED_GPIO, on ? 0 : 1);
+}
+
+static int load_last_station_from_nvs(void)
+{
+    nvs_handle_t my_handle;
+    int32_t last_station = -1;
+    esp_err_t err = nvs_open("radio_headless", NVS_READONLY, &my_handle);
+    if (err == ESP_OK) {
+        nvs_get_i32(my_handle, "last_station", &last_station);
+        nvs_close(my_handle);
+    }
+    return last_station;
+}
+
+static void save_last_station_to_nvs(int index)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("radio_headless", NVS_READWRITE, &my_handle);
+    if (err == ESP_OK) {
+        nvs_set_i32(my_handle, "last_station", index);
+        nvs_commit(my_handle);
+        nvs_close(my_handle);
+    }
+}
 #define BOOT_GPIO GPIO_NUM_0
 #define BOOT_LONG_EXIT_MS 1500
 #define BOOT_POLL_MS 20
 #define RADIO_MAX_FAILED_STATIONS 5
-#define SOMAFM_GROOVE_SALAD_URL "https://ice5.somafm.com/groovesalad-128-mp3"
+#define SOMAFM_GROOVE_SALAD_URL "https://lhttp.qtfm.cn/live/15318317/64k.mp3"
 #define RADIO_VISIBLE_DIAG_MAX_STREAMS 5
 #define RADIO_HEADLESS_VOLUME 28
 #define RADIO_SELFTEST_TAG "SELFTEST V4"
@@ -40,6 +87,7 @@ typedef enum {
     RADIO_BOOT_WAIT_NONE,
     RADIO_BOOT_WAIT_STREAM_DIAG,
     RADIO_BOOT_WAIT_HEADLESS_PLAY,
+    RADIO_BOOT_WAIT_RETURN_TO_MENU,
 } radio_boot_wait_mode_t;
 
 static volatile bool s_display_released;
@@ -94,7 +142,17 @@ bool radio_headless_display_released(void)
 static bool wifi_is_connected(void)
 {
     wifi_ap_record_t ap;
-    return esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+        return false;
+    }
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif) {
+        esp_netif_ip_info_t ip_info;
+        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+            return ip_info.ip.addr != 0;
+        }
+    }
+    return true;
 }
 
 static void reset_boot_wait_state(void)
@@ -296,9 +354,18 @@ static void player_status_cb(radio_player_state_t state, const char *message, vo
     if (message) {
         ESP_LOGI(TAG, "%s", message);
     }
+    s_current_player_state = state;
+
     if (state == RADIO_PLAYER_PLAYING) {
         s_player_playing = true;
         s_player_failed = false;
+        if (s_current_station >= 0) {
+            save_last_station_to_nvs(s_current_station);
+        }
+    } else if (state == RADIO_PLAYER_CONNECTING) {
+        s_player_playing = false;
+        s_player_failed = false;
+        s_connecting_start_time_ms = esp_timer_get_time() / 1000;
     } else if (state == RADIO_PLAYER_FAILED) {
         const char *reason = message ? strstr(message, "reason=") : NULL;
         reason = reason ? reason + strlen("reason=") : message;
@@ -750,6 +817,7 @@ static bool run_stream_diag_tasksafe(radio_diag_candidate_t *verified,
 
 static void start_boot_headless_play_wait(void);
 static void start_verified_headless_play(void);
+static void start_boot_wait(radio_boot_wait_mode_t mode);
 
 static void diag_screen_timer_cb(lv_timer_t *timer)
 {
@@ -761,14 +829,20 @@ static void diag_screen_timer_cb(lv_timer_t *timer)
     if (!diag_state_get(title, sizeof(title), detail, sizeof(detail), &done, &success)) {
         return;
     }
-    (void)success;
     set_diag_screen_text(title, detail);
     if (done && s_diag_screen_timer) {
         lv_timer_del(s_diag_screen_timer);
         s_diag_screen_timer = NULL;
     }
-    if (done && success && s_verified_stream_ready) {
-        start_boot_headless_play_wait();
+    if (done) {
+        if (success && s_verified_stream_ready) {
+            start_boot_headless_play_wait();
+        } else {
+            char err_detail[320];
+            snprintf(err_detail, sizeof(err_detail), "%s\n\nShort BOOT: Return to menu", detail);
+            set_diag_screen_text(title, err_detail);
+            start_boot_wait(RADIO_BOOT_WAIT_RETURN_TO_MENU);
+        }
     }
 }
 
@@ -802,7 +876,7 @@ static void start_stream_diag_task(void)
     }
     diag_state_set("Testing radio stream\n" RADIO_STREAM_DIAG_TAG,
                    "Starting task...", false, false);
-    if (xTaskCreate(stream_diag_task, "radio_stream_diag", 20480, NULL, 4,
+    if (xTaskCreate(stream_diag_task, "radio_stream_diag", 8192, NULL, 4,
                     &s_diag_task_handle) != pdPASS) {
         s_diag_task_handle = NULL;
         diag_state_set("Radio failed\n" RADIO_STREAM_DIAG_TAG,
@@ -846,6 +920,10 @@ static void boot_diag_timer_cb(lv_timer_t *timer)
             if (mode == RADIO_BOOT_WAIT_HEADLESS_PLAY) {
                 ESP_LOGI(TAG, "BOOT_SHORT_HEADLESS_PLAY");
                 start_verified_headless_play();
+            } else if (mode == RADIO_BOOT_WAIT_RETURN_TO_MENU) {
+                ESP_LOGI(TAG, "BOOT_SHORT_RETURN_TO_MENU");
+                reset_boot_wait_state();
+                restore_display(true);
             } else {
                 ESP_LOGI(TAG, "BOOT_SHORT_STREAM_DIAG");
                 set_diag_screen_text("Testing radio stream\n" RADIO_STREAM_DIAG_TAG,
@@ -889,15 +967,29 @@ static radio_loop_exit_t run_headless_loop(const char *initial_name,
     int64_t press_start_ms = 0;
     int failed_stations = 0;
 
+    led_init();
+
     snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "unknown");
-    if (initial_url && initial_url[0]) {
-        s_current_station = initial_station_index >= 0 ? initial_station_index : first_preferred_station_index();
-        start_url_playback(initial_name, initial_url);
+    radio_stations_init();
+    int last = load_last_station_from_nvs();
+    if (last >= 0 && last < radio_stations_count()) {
+        const radio_station_t *station = radio_stations_get(last);
+        if (station && station->enabled && station->type && strcmp(station->type, "mp3") == 0) {
+            s_current_station = last;
+            start_station(last);
+        } else {
+            goto use_initial;
+        }
     } else {
-        radio_stations_init();
-        s_current_station = first_preferred_station_index();
-        if (s_current_station >= 0) {
-            start_station(s_current_station);
+    use_initial:
+        if (initial_url && initial_url[0]) {
+            s_current_station = initial_station_index >= 0 ? initial_station_index : first_preferred_station_index();
+            start_url_playback(initial_name, initial_url);
+        } else {
+            s_current_station = first_preferred_station_index();
+            if (s_current_station >= 0) {
+                start_station(s_current_station);
+            }
         }
     }
     if (s_current_station < 0) {
@@ -906,7 +998,11 @@ static radio_loop_exit_t run_headless_loop(const char *initial_name,
         return RADIO_LOOP_EXIT_NO_STATIONS;
     }
 
+    uint32_t loop_count = 0;
+    bool led_state = false;
+
     while (true) {
+        loop_count++;
         bool pressed = gpio_get_level(BOOT_GPIO) == 0;
         int64_t now_ms = esp_timer_get_time() / 1000;
 
@@ -940,6 +1036,15 @@ static radio_loop_exit_t run_headless_loop(const char *initial_name,
             }
         }
 
+        if (s_current_player_state == RADIO_PLAYER_CONNECTING && s_connecting_start_time_ms > 0) {
+            if (now_ms - s_connecting_start_time_ms > 8000) {
+                ESP_LOGW(TAG, "RADIO_CONNECTING_TIMEOUT! Auto switching...");
+                radio_player_stop();
+                snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "connecting_timeout");
+                s_player_failed = true;
+            }
+        }
+
         if (s_player_failed && !radio_player_is_running()) {
             s_player_failed = false;
             failed_stations++;
@@ -947,6 +1052,7 @@ static radio_loop_exit_t run_headless_loop(const char *initial_name,
             if (failed_stations >= RADIO_MAX_FAILED_STATIONS) {
                 ESP_LOGE(TAG, "RADIO_ALL_FAILED tried=%d last_reason=%s",
                          failed_stations, s_last_fail_reason);
+                led_set(false);
                 return RADIO_LOOP_EXIT_ALL_FAILED;
             }
             int next = next_station_index();
@@ -957,9 +1063,21 @@ static radio_loop_exit_t run_headless_loop(const char *initial_name,
             }
         }
 
+        if (s_current_player_state == RADIO_PLAYER_CONNECTING) {
+            if (loop_count % 10 == 0) {
+                led_state = !led_state;
+                led_set(led_state);
+            }
+        } else if (s_current_player_state == RADIO_PLAYER_PLAYING) {
+            led_set(true);
+        } else {
+            led_set(false);
+        }
+
         vTaskDelay(pdMS_TO_TICKS(BOOT_POLL_MS));
     }
 
+    led_set(false);
     return RADIO_LOOP_EXIT_BOOT;
 }
 
@@ -1014,7 +1132,17 @@ void radio_headless_start(void)
     s_player_playing = false;
     snprintf(s_last_fail_reason, sizeof(s_last_fail_reason), "%s", "unknown");
 
-    show_message("Radio Audio Test\n" RADIO_SELFTEST_TAG "\nChecking WiFi...", 1800);
+    show_message("Radio Audio Test\n" RADIO_SELFTEST_TAG "\nChecking WiFi...", 600);
+
+    // 智能等待获取有效 IP，最多等待 8 秒
+    int wait_limit = 40;
+    while (wait_limit > 0) {
+        if (wifi_is_connected()) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
+        wait_limit--;
+    }
 
     if (!wifi_is_connected()) {
         ESP_LOGW(TAG, "WIFI_NOT_CONNECTED");

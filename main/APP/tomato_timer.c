@@ -40,6 +40,26 @@ static const unsigned char TOMATO_QWEATHER_ED25519_SEED[32] __attribute__((unuse
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "driver/gpio.h"
+
+#define TOMATO_LED_GPIO GPIO_NUM_1
+
+static int g_total_completed_tomatoes = 0;
+static lv_obj_t *g_total_tomatoes_label = NULL;
+
+static bool g_glow_sleep_active = false;
+static lv_obj_t *g_glow_sleep_cover = NULL;
+
+static void tomato_led_init(void);
+static void tomato_led_set(bool on);
+static void tomato_led_task(void *arg);
+static void load_tomato_settings_from_nvs(void);
+static void save_tomato_settings_to_nvs(void);
+static void exit_glow_sleep_mode(void);
+static void enter_glow_sleep_mode(void);
+static void on_card_clicked(lv_event_t *e);
 
 #ifndef TOMATO_WIFI_SSID
 #ifdef CONFIG_TOMATO_WIFI_SSID
@@ -149,6 +169,7 @@ typedef struct {
     lv_obj_t *label;
 } glow_button_t;
 
+static TaskHandle_t g_tomato_led_task_handle = NULL;
 static lv_obj_t *g_scr;
 static lv_obj_t *g_time_label;
 static lv_obj_t *g_date_label;
@@ -288,6 +309,7 @@ static void clear_wifi_page_refs(void)
 
 static void clear_page_refs(void)
 {
+    g_total_tomatoes_label = NULL;
     g_time_label = NULL;
     g_date_label = NULL;
     g_timer_arc = NULL;
@@ -633,12 +655,18 @@ static void update_timer_labels(void)
     set_label(g_start_label, g_state == TIMER_RUNNING ? "Running" : "Start");
     set_label(g_pause_label, g_state == TIMER_PAUSED ? "Resume" : "Pause");
     update_round_dots();
+
+    char total_buf[32];
+    snprintf(total_buf, sizeof(total_buf), "Total: %d 🍅", g_total_completed_tomatoes);
+    if (g_total_tomatoes_label) set_label(g_total_tomatoes_label, total_buf);
 }
 
 static void change_to_next_mode_after_completion(void)
 {
     if (g_mode == MODE_FOCUS) {
         g_completed_focus++;
+        g_total_completed_tomatoes++;
+        save_tomato_settings_to_nvs();
         if (g_completed_focus >= g_rounds) {
             g_completed_focus = 0;
             reset_mode(MODE_LONG_BREAK);
@@ -667,10 +695,20 @@ static void tick_cb(lv_timer_t *timer)
         }
         if (g_remaining_s <= 0) {
             g_state = TIMER_IDLE;
+            exit_glow_sleep_mode();
             change_to_next_mode_after_completion();
             return;
         }
         if (g_page == PAGE_MAIN) update_timer_labels();
+
+        if (g_glow_sleep_active && g_glow_sleep_cover) {
+            lv_obj_t *lbl_time = lv_obj_get_child(g_glow_sleep_cover, 1);
+            if (lbl_time) {
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%02d:%02d", g_remaining_s / 60, g_remaining_s % 60);
+                ui_text_set(lbl_time, buf);
+            }
+        }
     }
 }
 
@@ -821,6 +859,7 @@ static void on_focus_minus(lv_event_t *e)
     (void)e;
     if (g_focus_min > 5) g_focus_min -= 5;
     if (g_mode == MODE_FOCUS && g_state == TIMER_IDLE) reset_mode(MODE_FOCUS);
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -829,6 +868,7 @@ static void on_focus_plus(lv_event_t *e)
     (void)e;
     if (g_focus_min < 60) g_focus_min += 5;
     if (g_mode == MODE_FOCUS && g_state == TIMER_IDLE) reset_mode(MODE_FOCUS);
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -837,6 +877,7 @@ static void on_break_minus(lv_event_t *e)
     (void)e;
     if (g_short_break_min > 3) g_short_break_min--;
     if (g_mode == MODE_SHORT_BREAK && g_state == TIMER_IDLE) reset_mode(MODE_SHORT_BREAK);
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -845,6 +886,7 @@ static void on_break_plus(lv_event_t *e)
     (void)e;
     if (g_short_break_min < 20) g_short_break_min++;
     if (g_mode == MODE_SHORT_BREAK && g_state == TIMER_IDLE) reset_mode(MODE_SHORT_BREAK);
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -853,6 +895,7 @@ static void on_long_break_minus(lv_event_t *e)
     (void)e;
     if (g_long_break_min > 10) g_long_break_min -= 5;
     if (g_mode == MODE_LONG_BREAK && g_state == TIMER_IDLE) reset_mode(MODE_LONG_BREAK);
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -861,6 +904,7 @@ static void on_long_break_plus(lv_event_t *e)
     (void)e;
     if (g_long_break_min < 30) g_long_break_min += 5;
     if (g_mode == MODE_LONG_BREAK && g_state == TIMER_IDLE) reset_mode(MODE_LONG_BREAK);
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -869,6 +913,7 @@ static void on_round_minus(lv_event_t *e)
     (void)e;
     if (g_rounds > 1) g_rounds--;
     if (g_completed_focus >= g_rounds) g_completed_focus = g_rounds - 1;
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -876,6 +921,7 @@ static void on_round_plus(lv_event_t *e)
 {
     (void)e;
     if (g_rounds < DEFAULT_ROUNDS) g_rounds++;
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -883,6 +929,7 @@ static void on_weather_minus(lv_event_t *e)
 {
     (void)e;
     if (g_weather_refresh_min > 15) g_weather_refresh_min -= 15;
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -890,6 +937,7 @@ static void on_weather_plus(lv_event_t *e)
 {
     (void)e;
     if (g_weather_refresh_min < 60) g_weather_refresh_min += 15;
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -897,6 +945,7 @@ static void on_brightness_minus(lv_event_t *e)
 {
     (void)e;
     if (g_brightness_pct > 30) g_brightness_pct -= 10;
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -904,6 +953,7 @@ static void on_brightness_plus(lv_event_t *e)
 {
     (void)e;
     if (g_brightness_pct < 100) g_brightness_pct += 10;
+    save_tomato_settings_to_nvs();
     show_settings_page();
 }
 
@@ -931,6 +981,8 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_pos(card, 34, 98);
     style_panel(card, C_CARD_SOFT, LV_OPA_70, 28);
     lv_obj_set_style_pad_all(card, 0, 0);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(card, on_card_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *circle_bg = lv_obj_create(card);
     lv_obj_set_size(circle_bg, 254, 254);
@@ -981,6 +1033,9 @@ static void create_main_card(lv_obj_t *scr)
     g_weather_status_label = make_label(weather_card, "Local sample", UI_FONT_CN_16, C_MUTED, 22, 136);
     lv_obj_set_width(g_weather_status_label, 150);
     lv_label_set_long_mode(g_weather_status_label, LV_LABEL_LONG_DOT);
+
+    g_total_tomatoes_label = make_label(weather_card, "Total: 0 🍅", UI_FONT_CN_16, C_HIGHLIGHT, 176, 136);
+    lv_obj_set_width(g_total_tomatoes_label, 140);
 
     g_weather_scene = lv_obj_create(weather_card);
     lv_obj_set_size(g_weather_scene, 150, 136);
@@ -2299,6 +2354,11 @@ void tomato_timer_start(void)
 {
     if (!g_weather_mutex) g_weather_mutex = xSemaphoreCreateMutex();
     load_wifi_credentials_once();
+    load_tomato_settings_from_nvs();
+
+    if (g_tomato_led_task_handle == NULL) {
+        xTaskCreate(tomato_led_task, "tomato_led", 2048, NULL, 3, &g_tomato_led_task_handle);
+    }
 
     g_scr = lv_obj_create(NULL);
     lv_scr_load(g_scr);
@@ -2310,4 +2370,172 @@ void tomato_timer_start(void)
     g_tick_timer = lv_timer_create(tick_cb, 1000, NULL);
 
     start_weather_task_once();
+}
+
+static void sleep_cover_clicked_cb(lv_event_t *e)
+{
+    (void)e;
+    exit_glow_sleep_mode();
+}
+
+static void enter_glow_sleep_mode(void)
+{
+    g_glow_sleep_active = true;
+    
+    g_glow_sleep_cover = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(g_glow_sleep_cover, 800, 480);
+    lv_obj_set_pos(g_glow_sleep_cover, 0, 0);
+    lv_obj_set_style_bg_color(g_glow_sleep_cover, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_glow_sleep_cover, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_glow_sleep_cover, 0, 0);
+    lv_obj_set_style_pad_all(g_glow_sleep_cover, 0, 0);
+    lv_obj_clear_flag(g_glow_sleep_cover, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_glow_sleep_cover, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(g_glow_sleep_cover, sleep_cover_clicked_cb, LV_EVENT_CLICKED, NULL);
+    
+    lv_obj_t *lbl_title = lv_label_create(g_glow_sleep_cover);
+    ui_text_set(lbl_title, "Glow Sleep - Keep Focus");
+    lv_obj_set_style_text_font(lbl_title, UI_FONT_CN_20, 0);
+    lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xAA4411), 0);
+    lv_obj_align(lbl_title, LV_ALIGN_CENTER, 0, -60);
+    
+    lv_obj_t *lbl_time = lv_label_create(g_glow_sleep_cover);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%02d:%02d", g_remaining_s / 60, g_remaining_s % 60);
+    ui_text_set(lbl_time, buf);
+    lv_obj_set_style_text_font(lbl_time, UI_FONT_DIGIT_48, 0);
+    lv_obj_set_style_text_color(lbl_time, lv_color_hex(0xDD5511), 0);
+    lv_obj_align(lbl_time, LV_ALIGN_CENTER, 0, 10);
+    
+    lv_obj_t *lbl_hint = lv_label_create(g_glow_sleep_cover);
+    ui_text_set(lbl_hint, "Tap anywhere to wake up");
+    lv_obj_set_style_text_font(lbl_hint, UI_FONT_CN_16, 0);
+    lv_obj_set_style_text_color(lbl_hint, lv_color_hex(0x662208), 0);
+    lv_obj_align(lbl_hint, LV_ALIGN_CENTER, 0, 80);
+    
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, lbl_time);
+    lv_anim_set_exec_cb(&a, anim_opa_cb);
+    lv_anim_set_values(&a, LV_OPA_30, LV_OPA_COVER);
+    lv_anim_set_time(&a, 1500);
+    lv_anim_set_playback_time(&a, 1500);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
+}
+
+static void exit_glow_sleep_mode(void)
+{
+    g_glow_sleep_active = false;
+    if (g_glow_sleep_cover) {
+        lv_obj_del(g_glow_sleep_cover);
+        g_glow_sleep_cover = NULL;
+    }
+}
+
+static void on_card_clicked(lv_event_t *e)
+{
+    (void)e;
+    if (g_state == TIMER_RUNNING && g_mode == MODE_FOCUS && !g_glow_sleep_active) {
+        enter_glow_sleep_mode();
+    }
+}
+
+static void tomato_led_init(void)
+{
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << TOMATO_LED_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+}
+
+static void tomato_led_set(bool on)
+{
+    gpio_set_level(TOMATO_LED_GPIO, on ? 0 : 1);
+}
+
+static void tomato_led_task(void *arg)
+{
+    (void)arg;
+    tomato_led_init();
+    int tick = 0;
+    int direction = 1;
+    int brightness = 0;
+    
+    while (true) {
+        if (g_scr != NULL && lv_scr_act() != g_scr) {
+            tomato_led_set(false);
+            g_tomato_led_task_handle = NULL;
+            vTaskDelete(NULL);
+            break;
+        }
+        tick++;
+        if (g_state == TIMER_RUNNING && g_mode == MODE_FOCUS) {
+            if (tick % 2 == 0) {
+                brightness += direction * 2;
+                if (brightness >= 100) {
+                    brightness = 100;
+                    direction = -1;
+                } else if (brightness <= 0) {
+                    brightness = 0;
+                    direction = 1;
+                }
+            }
+            
+            int pwm_phase = tick % 10;
+            if (pwm_phase < (brightness / 10)) {
+                tomato_led_set(true);
+            } else {
+                tomato_led_set(false);
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } 
+        else if (g_state == TIMER_IDLE && g_remaining_s <= 0) {
+            tomato_led_set(true);
+            vTaskDelay(pdMS_TO_TICKS(120));
+            tomato_led_set(false);
+            vTaskDelay(pdMS_TO_TICKS(120));
+        } 
+        else {
+            tomato_led_set(false);
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+}
+
+static void load_tomato_settings_from_nvs(void)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("tomato_timer", NVS_READONLY, &my_handle);
+    if (err == ESP_OK) {
+        int32_t val;
+        if (nvs_get_i32(my_handle, "focus_min", &val) == ESP_OK) g_focus_min = val;
+        if (nvs_get_i32(my_handle, "short_break", &val) == ESP_OK) g_short_break_min = val;
+        if (nvs_get_i32(my_handle, "long_break", &val) == ESP_OK) g_long_break_min = val;
+        if (nvs_get_i32(my_handle, "rounds", &val) == ESP_OK) g_rounds = val;
+        if (nvs_get_i32(my_handle, "brightness", &val) == ESP_OK) g_brightness_pct = val;
+        if (nvs_get_i32(my_handle, "total_tomatoes", &val) == ESP_OK) g_total_completed_tomatoes = val;
+        nvs_close(my_handle);
+    }
+}
+
+static void save_tomato_settings_to_nvs(void)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("tomato_timer", NVS_READWRITE, &my_handle);
+    if (err == ESP_OK) {
+        nvs_set_i32(my_handle, "focus_min", g_focus_min);
+        nvs_set_i32(my_handle, "short_break", g_short_break_min);
+        nvs_set_i32(my_handle, "long_break", g_long_break_min);
+        nvs_set_i32(my_handle, "rounds", g_rounds);
+        nvs_set_i32(my_handle, "brightness", g_brightness_pct);
+        nvs_set_i32(my_handle, "total_tomatoes", g_total_completed_tomatoes);
+        nvs_commit(my_handle);
+        nvs_close(my_handle);
+    }
 }
