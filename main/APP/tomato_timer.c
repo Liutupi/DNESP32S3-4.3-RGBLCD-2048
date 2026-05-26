@@ -453,10 +453,10 @@ static void start_loop_anim(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
 
 static void add_cloud_shape(lv_obj_t *parent)
 {
-    create_disc(parent, 30, 48, 44, 0xFFFFFF, LV_OPA_70);
-    create_disc(parent, 58, 34, 58, 0xFFFFFF, LV_OPA_80);
-    create_disc(parent, 98, 50, 38, 0xFFFFFF, LV_OPA_70);
-    create_mote(parent, 38, 72, 88, 22, 0xFFFFFF);
+    create_disc(parent, 30, 28, 44, 0xFFFFFF, LV_OPA_70);
+    create_disc(parent, 58, 14, 58, 0xFFFFFF, LV_OPA_80);
+    create_disc(parent, 98, 30, 38, 0xFFFFFF, LV_OPA_70);
+    create_mote(parent, 38, 52, 88, 22, 0xFFFFFF);
 }
 
 static void rebuild_weather_animation(weather_anim_t kind)
@@ -467,11 +467,11 @@ static void rebuild_weather_animation(weather_anim_t kind)
     g_weather_anim_kind = kind;
 
     if (kind == WX_ANIM_SUNNY) {
-        lv_obj_t *sun = create_disc(g_weather_scene, 46, 30, 76, C_HIGHLIGHT, LV_OPA_COVER);
+        lv_obj_t *sun = create_disc(g_weather_scene, 46, 10, 76, C_HIGHLIGHT, LV_OPA_COVER);
         start_loop_anim(sun, anim_opa_cb, LV_OPA_70, LV_OPA_COVER, 1100, 0);
         for (int i = 0; i < 8; ++i) {
             int x = 82 + (i % 4) * 18 - (i / 4) * 72;
-            int y = (i < 4) ? 18 : 106;
+            int y = (i < 4) ? -2 : 86;
             g_weather_motes[i] = create_mote(g_weather_scene, x, y, 26, 4, C_HIGHLIGHT_2);
             start_loop_anim(g_weather_motes[i], anim_opa_cb, LV_OPA_40, LV_OPA_90, 1200, i * 120);
         }
@@ -482,12 +482,12 @@ static void rebuild_weather_animation(weather_anim_t kind)
 
     if (kind == WX_ANIM_RAINY || kind == WX_ANIM_STORMY) {
         for (int i = 0; i < 6; ++i) {
-            g_weather_motes[i] = create_mote(g_weather_scene, 38 + i * 17, 88, 5, 20, 0x8AD9FF);
-            start_loop_anim(g_weather_motes[i], anim_y_cb, 88, 118, 650, i * 120);
+            g_weather_motes[i] = create_mote(g_weather_scene, 38 + i * 17, 68, 5, 20, 0x8AD9FF);
+            start_loop_anim(g_weather_motes[i], anim_y_cb, 68, 98, 650, i * 120);
             start_loop_anim(g_weather_motes[i], anim_opa_cb, LV_OPA_30, LV_OPA_COVER, 650, i * 120);
         }
         if (kind == WX_ANIM_STORMY) {
-            lv_obj_t *bolt = make_label(g_weather_scene, "Z", &lv_font_montserrat_28, C_HIGHLIGHT, 76, 82);
+            lv_obj_t *bolt = make_label(g_weather_scene, "Z", &lv_font_montserrat_28, C_HIGHLIGHT, 76, 62);
             start_loop_anim(bolt, anim_opa_cb, LV_OPA_0, LV_OPA_COVER, 360, 0);
         }
         return;
@@ -495,8 +495,8 @@ static void rebuild_weather_animation(weather_anim_t kind)
 
     if (kind == WX_ANIM_SNOWY) {
         for (int i = 0; i < 6; ++i) {
-            g_weather_motes[i] = create_disc(g_weather_scene, 42 + i * 16, 90, 8, 0xFFFFFF, LV_OPA_90);
-            start_loop_anim(g_weather_motes[i], anim_y_cb, 88, 120, 1200, i * 140);
+            g_weather_motes[i] = create_disc(g_weather_scene, 42 + i * 16, 70, 8, 0xFFFFFF, LV_OPA_90);
+            start_loop_anim(g_weather_motes[i], anim_y_cb, 68, 100, 1200, i * 140);
             start_loop_anim(g_weather_motes[i], anim_x_cb, 42 + i * 16, 48 + i * 16, 1200, i * 140);
         }
         return;
@@ -504,7 +504,7 @@ static void rebuild_weather_animation(weather_anim_t kind)
 
     if (kind == WX_ANIM_FOGGY) {
         for (int i = 0; i < 4; ++i) {
-            g_weather_motes[i] = create_mote(g_weather_scene, 24, 88 + i * 10, 110, 5, 0xFFEBC9);
+            g_weather_motes[i] = create_mote(g_weather_scene, 24, 68 + i * 10, 110, 5, 0xFFEBC9);
             start_loop_anim(g_weather_motes[i], anim_x_cb, 22, 42, 1700, i * 180);
             start_loop_anim(g_weather_motes[i], anim_opa_cb, LV_OPA_40, LV_OPA_80, 1700, i * 180);
         }
@@ -512,8 +512,8 @@ static void rebuild_weather_animation(weather_anim_t kind)
     }
 
     for (int i = 0; i < 3; ++i) {
-        g_weather_motes[i] = create_disc(g_weather_scene, 26 + i * 40, 92, 9, 0xFFFFFF, LV_OPA_50);
-        start_loop_anim(g_weather_motes[i], anim_y_cb, 90, 98, 1300, i * 180);
+        g_weather_motes[i] = create_disc(g_weather_scene, 26 + i * 40, 72, 9, 0xFFFFFF, LV_OPA_50);
+        start_loop_anim(g_weather_motes[i], anim_y_cb, 70, 78, 1300, i * 180);
     }
 }
 
@@ -657,7 +657,7 @@ static void update_timer_labels(void)
     update_round_dots();
 
     char total_buf[32];
-    snprintf(total_buf, sizeof(total_buf), "Total: %d 🍅", g_total_completed_tomatoes);
+    snprintf(total_buf, sizeof(total_buf), "专注总量: %d", g_total_completed_tomatoes);
     if (g_total_tomatoes_label) set_label(g_total_tomatoes_label, total_buf);
 }
 
@@ -1034,7 +1034,7 @@ static void create_main_card(lv_obj_t *scr)
     lv_obj_set_width(g_weather_status_label, 150);
     lv_label_set_long_mode(g_weather_status_label, LV_LABEL_LONG_DOT);
 
-    g_total_tomatoes_label = make_label(weather_card, "Total: 0 🍅", UI_FONT_CN_16, C_HIGHLIGHT, 176, 136);
+    g_total_tomatoes_label = make_label(weather_card, "专注总量: 0", UI_FONT_CN_16, C_HIGHLIGHT, 176, 136);
     lv_obj_set_width(g_total_tomatoes_label, 140);
 
     g_weather_scene = lv_obj_create(weather_card);
