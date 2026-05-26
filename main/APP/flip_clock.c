@@ -152,6 +152,12 @@ static void set_divider_opa_cb(void *obj, int32_t v)
     if (obj) lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
 }
 
+static void set_glow_bg_opa_cb(void *obj, int32_t v)
+{
+    if (!g_active) return;
+    if (obj) lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
+}
+
 static void set_top_flap_h_cb(void *obj, int32_t v)
 {
     if (!g_active || !obj) return;
@@ -477,8 +483,23 @@ static void flip_clock_update_date_status(const struct tm *tm_now, bool synced)
     bool sntp_synced = synced || esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED;
 
     if (g_status_label) {
-        ui_text_set(g_status_label, synced ? "SYNCED" : "SYNCING");
-        lv_obj_set_style_text_color(g_status_label, lv_color_hex(synced ? COL_OK : COL_TEXT_DIM), 0);
+        const char *status_str = synced ? "SYNCED" : "SYNCING";
+        uint32_t status_col = synced ? COL_OK : COL_TEXT_DIM;
+
+        /* SYNCING -> SYNCED 时触发淡入动画 */
+        bool was_syncing = lv_obj_get_style_text_color(g_status_label, 0).full == lv_color_hex(COL_TEXT_DIM).full;
+        ui_text_set(g_status_label, status_str);
+        lv_obj_set_style_text_color(g_status_label, lv_color_hex(status_col), 0);
+        if (synced && was_syncing) {
+            lv_anim_t fa;
+            lv_anim_init(&fa);
+            lv_anim_set_var(&fa, g_status_label);
+            lv_anim_set_exec_cb(&fa, set_opa_cb);
+            lv_anim_set_values(&fa, LV_OPA_0, LV_OPA_COVER);
+            lv_anim_set_time(&fa, 600);
+            lv_anim_set_path_cb(&fa, lv_anim_path_ease_out);
+            lv_anim_start(&fa);
+        }
     }
     if (g_wifi_label) {
         ui_text_set(g_wifi_label,
@@ -582,10 +603,23 @@ static void flip_clock_create_ui(void)
     lv_obj_set_style_border_width(g_scr, 0, 0);
     lv_obj_set_style_pad_all(g_scr, 0, 0);
 
-    panel(g_scr, 175, 120, 450, 230, COL_BG_GLOW, LV_OPA_30, 54);
+    /* 背景光晕 */
+    lv_obj_t *glow_center = panel(g_scr, 175, 120, 450, 230, COL_BG_GLOW, LV_OPA_30, 54);
     panel(g_scr, 268, 70, 264, 82, COL_GLOW, LV_OPA_20, 38);
     panel(g_scr, 62, 370, 210, 58, 0x3B2115, LV_OPA_30, 26);
     panel(g_scr, 526, 366, 220, 62, 0x5A2D18, LV_OPA_30, 28);
+
+    /* 中心大光晕 8s 呼吸 */
+    lv_anim_t ga;
+    lv_anim_init(&ga);
+    lv_anim_set_var(&ga, glow_center);
+    lv_anim_set_exec_cb(&ga, set_glow_bg_opa_cb);
+    lv_anim_set_values(&ga, LV_OPA_20, LV_OPA_50);
+    lv_anim_set_time(&ga, 8000);
+    lv_anim_set_playback_time(&ga, 8000);
+    lv_anim_set_repeat_count(&ga, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&ga, lv_anim_path_ease_in_out);
+    lv_anim_start(&ga);
 
     make_back_button(g_scr);
 
@@ -626,19 +660,23 @@ static void flip_clock_create_ui(void)
     g_second_colon_bottom = panel(g_scr, second_colon_x, DIGIT_Y + 94, 8, 8,
                                   COL_DIVIDER_HOT, LV_OPA_COVER, 4);
 
+    /* 分隔线 */
     panel(g_scr, 154, 354, 492, 1, COL_DIVIDER, LV_OPA_50, 0);
 
+    /* 日期标签：双行居中布局第一行 */
     g_date_label = label(g_scr, "Time syncing", &lv_font_montserrat_20, COL_TEXT_SOFT);
     if (g_date_label) {
-        lv_obj_set_width(g_date_label, 240);
-        lv_obj_set_pos(g_date_label, 178, 386);
+        lv_obj_set_width(g_date_label, 400);
+        lv_obj_set_style_text_align(g_date_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(g_date_label, 200, 368);
     }
 
-    g_wifi_label = label(g_scr, "WiFi Offline   SNTP Waiting", &lv_font_montserrat_16, COL_TEXT_DIM);
+    /* WiFi 标签：第二行，居中，字体缩小 */
+    g_wifi_label = label(g_scr, "WiFi Offline   SNTP Waiting", &lv_font_montserrat_14, COL_TEXT_DIM);
     if (g_wifi_label) {
-        lv_obj_set_width(g_wifi_label, 360);
-        lv_obj_set_style_text_align(g_wifi_label, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_set_pos(g_wifi_label, 272, 390);
+        lv_obj_set_width(g_wifi_label, 560);
+        lv_obj_set_style_text_align(g_wifi_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(g_wifi_label, 120, 400);
     }
 
     lv_scr_load(g_scr);

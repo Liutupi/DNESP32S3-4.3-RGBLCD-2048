@@ -94,6 +94,7 @@ static bool g_menu_ready = false;
 static lv_obj_t *g_greeting_label = NULL;
 static lv_timer_t *g_greeting_timer = NULL;
 static lv_obj_t *g_flip_clock_preview = NULL;
+static lv_obj_t *g_header_time_label = NULL;
 
 extern lv_obj_t *debug_label;
 
@@ -311,11 +312,30 @@ static void update_network_status_label(void)
     }
 }
 
+static void update_header_time_label(void)
+{
+    if (!g_header_time_label) return;
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+
+    if (tm_now.tm_year < 124) {
+        ui_text_set(g_header_time_label, "--:--");
+        return;
+    }
+
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02d:%02d", tm_now.tm_hour, tm_now.tm_min);
+    ui_text_set(g_header_time_label, buf);
+}
+
 static void network_status_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
     update_network_status_label();
     update_clock_preview();
+    update_header_time_label();
 }
 
 static void create_background(lv_obj_t *parent)
@@ -345,6 +365,11 @@ static lv_obj_t *create_header(lv_obj_t *parent)
     lv_obj_set_pos(g_network_label, 570, 58);
     update_network_status_label();
 
+    /* Header 实时时钟，右上角显示 HH:MM */
+    g_header_time_label = mk_label(header, "--:--", FONT_TITLE, COL_CLOCK);
+    lv_obj_set_pos(g_header_time_label, 614, 8);
+    update_header_time_label();
+
     return header;
 }
 
@@ -359,6 +384,9 @@ static lv_obj_t *create_photo_card(lv_obj_t *parent)
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_border_opa(card, LV_OPA_20, 0);
+
+    /* 右侧暖橙渐变色带装饰 */
+    mk_panel(card, 276, 0, 80, CARD_H, COL_ACCENT, 20, 28);
 
     lv_obj_t *d1 = mk_panel(card, 220, 60, 108, 80, COL_ACCENT, LV_OPA_10, 16);
     lv_obj_t *d2 = mk_panel(card, 238, 78,  88, 62, COL_ACCENT, LV_OPA_10, 12);
@@ -392,6 +420,9 @@ static lv_obj_t *create_flip_card(lv_obj_t *parent)
     lv_obj_set_style_border_color(card, lv_color_hex(COL_ACCENT_2), 0);
     lv_obj_set_style_border_opa(card, LV_OPA_20, 0);
 
+    /* 右侧琥珀色装饰色带 */
+    mk_panel(card, 276, 0, 80, CARD_H, COL_ACCENT_2, 20, 28);
+
     lv_obj_t *df = mk_panel(card, 218, 54, 114, 114, COL_ACCENT_2, LV_OPA_10, 24);
     start_breath(df, LV_OPA_10, LV_OPA_20, 4000, 0);
 
@@ -413,7 +444,8 @@ static lv_obj_t *create_flip_card(lv_obj_t *parent)
 
 static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x,
                                   const char *title, const char *sub,
-                                  uint32_t accent)
+                                  const char *icon_char,
+                                  uint32_t accent, uint32_t bar_color)
 {
     mk_panel(parent, x + 2, DOCK_Y + 3,
              DOCK_W, DOCK_H, COL_SHADOW, LV_OPA_40, 20);
@@ -424,15 +456,21 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x,
     lv_obj_set_style_border_color(card, lv_color_hex(COL_SHADOW), 0);
     lv_obj_set_style_border_opa(card, LV_OPA_50, 0);
 
-    mk_panel(card, 14, 16, 12, 12, accent, LV_OPA_COVER, 6);
+    /* 顶部彩色标识条 */
+    mk_panel(card, 0, 0, DOCK_W, 3, bar_color, LV_OPA_COVER, 20);
+
+    /* 图标底盘（24x24） */
+    mk_panel(card, 10, 14, 24, 24, accent, 64, 12);
+    lv_obj_t *ic = mk_label(card, icon_char, FONT_HINT, accent);
+    lv_obj_set_pos(ic, 16, 16);
 
     lv_obj_t *t = mk_label(card, title, FONT_HINT, COL_TEXT);
-    lv_obj_set_pos(t, 12, 28);
+    lv_obj_set_pos(t, 12, 44);
     lv_obj_set_width(t, DOCK_W - 20);
     lv_label_set_long_mode(t, LV_LABEL_LONG_CLIP);
 
     lv_obj_t *s = mk_label(card, sub, FONT_HINT, COL_TEXT_SOFT);
-    lv_obj_set_pos(s, 14, 58);
+    lv_obj_set_pos(s, 14, 70);
     lv_obj_set_width(s, DOCK_W - 28);
     lv_label_set_long_mode(s, LV_LABEL_LONG_CLIP);
 
@@ -441,11 +479,15 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x,
 
 static void create_dock(lv_obj_t *parent)
 {
-    g_2048_card      = create_dock_card(parent, DOCK_2048_X,  "2048",   "Puzzle", COL_ACCENT);
-    g_react_card     = create_dock_card(parent, DOCK_REACT_X, "React",  "Test",   COL_ACCENT_2);
-    g_tomato_card    = create_dock_card(parent, DOCK_TOMATO_X,"Tomato", "Timer",  COL_ACCENT_2);
-    g_radio_card     = create_dock_card(parent, DOCK_RADIO_X, "Radio",  "Stream", COL_ACCENT_2);
-    g_mastermind_card= create_dock_card(parent, DOCK_MM_X,    "Master", "Mind",   COL_ACCENT);
+    /* 大卡片与 Dock 之间的分隔线 */
+    mk_panel(parent, 32, 348, 736, 1, COL_SHADOW, LV_OPA_50, 0);
+
+    /* 每个 App 独立色条：2048=暖橙 React=冷蓝 Tomato=番茄红 Radio=薄荷绿 Master=紫 */
+    g_2048_card      = create_dock_card(parent, DOCK_2048_X,  "2048",   "Puzzle", "2", COL_ACCENT,   0xD07020);
+    g_react_card     = create_dock_card(parent, DOCK_REACT_X, "React",  "Test",   "R", COL_ACCENT_2, 0x4A9FD5);
+    g_tomato_card    = create_dock_card(parent, DOCK_TOMATO_X,"Tomato", "Timer",  "T", COL_ACCENT_2, 0xE05050);
+    g_radio_card     = create_dock_card(parent, DOCK_RADIO_X, "Radio",  "Stream", "S", COL_ACCENT_2, 0x50A060);
+    g_mastermind_card= create_dock_card(parent, DOCK_MM_X,    "Master", "Mind",   "M", COL_ACCENT,   0x9060D0);
 }
 
 static lv_obj_t *create_footer(lv_obj_t *parent)
@@ -586,6 +628,7 @@ void menu_start(void)
     }
     g_network_label = NULL;
     g_flip_clock_preview = NULL;
+    g_header_time_label = NULL;
 
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
 

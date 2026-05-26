@@ -462,17 +462,32 @@ static void boot_ui_build_splash_screen(void)
     lv_anim_set_exec_cb(&anim, boot_ui_bar_anim_cb);
     lv_anim_set_values(&anim, 18, 284);
     lv_anim_set_time(&anim, BOOT_UI_BOOT_MS);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
     lv_anim_start(&anim);
 
-    lv_obj_t *scan = boot_ui_make_panel(s_boot_ui_splash_scr, 0, 382, BOOT_UI_W, 2,
-                                        lv_color_hex(0x22E7FF), LV_OPA_80, 0);
+    /* 副标题呼吸动画 */
+    lv_anim_t ab;
+    lv_anim_init(&ab);
+    lv_anim_set_var(&ab, sub);
+    lv_anim_set_exec_cb(&ab, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
+    lv_anim_set_values(&ab, LV_OPA_30, LV_OPA_COVER);
+    lv_anim_set_time(&ab, 800);
+    lv_anim_set_playback_time(&ab, 800);
+    lv_anim_set_repeat_count(&ab, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&ab, lv_anim_path_ease_in_out);
+    lv_anim_start(&ab);
+
+    /* 扫描线：单向从顶部扫到底部，营造系统初始化仪式感 */
+    lv_obj_t *scan = boot_ui_make_panel(s_boot_ui_splash_scr, 0, 0, BOOT_UI_W, 2,
+                                        lv_color_hex(0x22E7FF), LV_OPA_70, 0);
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, scan);
     lv_anim_set_exec_cb(&anim, boot_ui_scan_anim_cb);
-    lv_anim_set_values(&anim, 82, 382);
-    lv_anim_set_time(&anim, 680);
-    lv_anim_set_playback_time(&anim, 680);
+    lv_anim_set_values(&anim, 0, BOOT_UI_HEIGHT);
+    lv_anim_set_time(&anim, 900);
+    lv_anim_set_delay(&anim, 0);
     lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&anim, lv_anim_path_linear);
     lv_anim_start(&anim);
 }
 
