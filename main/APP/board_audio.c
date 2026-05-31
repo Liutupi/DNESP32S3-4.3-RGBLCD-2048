@@ -27,6 +27,7 @@
 #define I2S_DIN_GPIO GPIO_NUM_14  /* ESP32 RX <- ES8388 ASDOUT */
 
 static i2s_chan_handle_t s_tx_handle;
+static i2s_chan_handle_t s_rx_handle;
 static bool s_i2s_started;
 static bool s_expander_ready;
 static int s_i2s_rate;
@@ -113,6 +114,13 @@ esp_err_t board_audio_i2s_start(int sample_rate)
             unlock_i2s();
             ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_disable failed");
         }
+        if (s_rx_handle) {
+            err = i2s_channel_disable(s_rx_handle);
+            if (err != ESP_OK) {
+                unlock_i2s();
+                ESP_RETURN_ON_ERROR(err, TAG, "i2s_rx_channel_disable failed");
+            }
+        }
         s_i2s_started = false;
     }
 
@@ -123,15 +131,29 @@ esp_err_t board_audio_i2s_start(int sample_rate)
             unlock_i2s();
             ESP_RETURN_ON_ERROR(err, TAG, "i2s clock reconfig failed");
         }
+        if (s_rx_handle) {
+            err = i2s_channel_reconfig_std_clock(s_rx_handle, &clk_cfg);
+            if (err != ESP_OK) {
+                unlock_i2s();
+                ESP_RETURN_ON_ERROR(err, TAG, "i2s rx clock reconfig failed");
+            }
+        }
         err = i2s_channel_enable(s_tx_handle);
         if (err != ESP_OK) {
             unlock_i2s();
             ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_enable failed");
         }
+        if (s_rx_handle) {
+            err = i2s_channel_enable(s_rx_handle);
+            if (err != ESP_OK) {
+                unlock_i2s();
+                ESP_RETURN_ON_ERROR(err, TAG, "i2s_rx_channel_enable failed");
+            }
+        }
     } else {
         i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
         chan_cfg.auto_clear = true;
-        esp_err_t err = i2s_new_channel(&chan_cfg, &s_tx_handle, NULL);
+        esp_err_t err = i2s_new_channel(&chan_cfg, &s_tx_handle, &s_rx_handle);
         if (err != ESP_OK) {
             unlock_i2s();
             ESP_RETURN_ON_ERROR(err, TAG, "i2s_new_channel failed");
@@ -158,15 +180,37 @@ esp_err_t board_audio_i2s_start(int sample_rate)
         if (err != ESP_OK) {
             i2s_del_channel(s_tx_handle);
             s_tx_handle = NULL;
+            s_rx_handle = NULL;
             unlock_i2s();
             ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_init_std_mode failed");
+        }
+        if (s_rx_handle) {
+            err = i2s_channel_init_std_mode(s_rx_handle, &std_cfg);
+            if (err != ESP_OK) {
+                i2s_del_channel(s_tx_handle);
+                s_tx_handle = NULL;
+                s_rx_handle = NULL;
+                unlock_i2s();
+                ESP_RETURN_ON_ERROR(err, TAG, "i2s_rx_channel_init_std_mode failed");
+            }
         }
         err = i2s_channel_enable(s_tx_handle);
         if (err != ESP_OK) {
             i2s_del_channel(s_tx_handle);
             s_tx_handle = NULL;
+            s_rx_handle = NULL;
             unlock_i2s();
             ESP_RETURN_ON_ERROR(err, TAG, "i2s_channel_enable failed");
+        }
+        if (s_rx_handle) {
+            err = i2s_channel_enable(s_rx_handle);
+            if (err != ESP_OK) {
+                i2s_del_channel(s_tx_handle);
+                s_tx_handle = NULL;
+                s_rx_handle = NULL;
+                unlock_i2s();
+                ESP_RETURN_ON_ERROR(err, TAG, "i2s_rx_channel_enable failed");
+            }
         }
     }
 
@@ -190,6 +234,13 @@ void board_audio_i2s_stop(void)
         }
         i2s_del_channel(s_tx_handle);
         s_tx_handle = NULL;
+    }
+    if (s_rx_handle) {
+        if (s_i2s_started) {
+            i2s_channel_disable(s_rx_handle);
+        }
+        i2s_del_channel(s_rx_handle);
+        s_rx_handle = NULL;
     }
     s_i2s_started = false;
     s_i2s_rate = 0;
@@ -265,4 +316,9 @@ bool board_audio_play_beep_440hz_500ms(void)
     }
     ESP_LOGI(TAG, "BEEP_OK");
     return true;
+}
+
+i2s_chan_handle_t board_audio_i2s_get_handle(void)
+{
+    return s_rx_handle;
 }

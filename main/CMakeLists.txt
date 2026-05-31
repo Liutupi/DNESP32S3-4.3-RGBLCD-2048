@@ -19,7 +19,8 @@ idf_component_register(
         "APP/tomato_timer.c"
         "APP/ui_fonts.c"
         "APP/ui_text.c"
-    INCLUDE_DIRS 
+        "APP/xiaozhi_headless.c"
+    INCLUDE_DIRS
         "."
         "APP"
     REQUIRES
@@ -37,4 +38,5 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_i2c
         json
-        lwip)
+        lwip
+        esp_websocket_client)

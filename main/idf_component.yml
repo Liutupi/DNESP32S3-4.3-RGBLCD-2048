@@ -15,4 +15,5 @@ dependencies:
   #   # All dependencies of `main` are public by default.
   #   public: true
   lvgl/lvgl: ^8.4.0
-  espressif/esp_audio_codec: "*"
+  espressif/esp_audio_codec: '*'
+  espressif/esp_websocket_client: '*'

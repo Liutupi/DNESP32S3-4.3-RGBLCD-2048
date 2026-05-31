@@ -15,6 +15,7 @@
 #include "flip_clock.h"
 #include "radio_headless.h"
 #include "mastermind.h"
+#include "xiaozhi_headless.h"
 #include "ui_fonts.h"
 #include "ui_text.h"
 #include "esp_wifi.h"
@@ -50,11 +51,12 @@
 #define DOCK_W          106
 #define DOCK_H          106
 
-#define DOCK_2048_X      67
-#define DOCK_REACT_X    207
-#define DOCK_TOMATO_X   347
-#define DOCK_RADIO_X    487
-#define DOCK_MM_X       627
+#define DOCK_2048_X      32
+#define DOCK_REACT_X    164
+#define DOCK_TOMATO_X   296
+#define DOCK_RADIO_X    428
+#define DOCK_MM_X       560
+#define DOCK_XIAOZHI_X  692
 
 #define FONT_TITLE     &lv_font_montserrat_32
 #define FONT_BODY      &lv_font_montserrat_24
@@ -73,6 +75,7 @@ typedef enum {
     APP_FLIP_CLOCK,
     APP_RADIO,
     APP_MASTERMIND,
+    APP_XIAOZHI,
 } menu_app_t;
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -85,6 +88,7 @@ static lv_obj_t *g_tomato_card = NULL;
 static lv_obj_t *g_flip_card = NULL;
 static lv_obj_t *g_radio_card = NULL;
 static lv_obj_t *g_mastermind_card = NULL;
+static lv_obj_t *g_xiaozhi_card = NULL;
 static lv_obj_t *g_network_label = NULL;
 static lv_timer_t *g_network_timer = NULL;
 static lv_coord_t g_press_x = 0;
@@ -488,6 +492,7 @@ static void create_dock(lv_obj_t *parent)
     g_tomato_card    = create_dock_card(parent, DOCK_TOMATO_X,"Tomato", "Timer",  "T", COL_ACCENT_2, 0xE05050);
     g_radio_card     = create_dock_card(parent, DOCK_RADIO_X, "Radio",  "Stream", "S", COL_ACCENT_2, 0x50A060);
     g_mastermind_card= create_dock_card(parent, DOCK_MM_X,    "Master", "Mind",   "M", COL_ACCENT,   0x9060D0);
+    g_xiaozhi_card   = create_dock_card(parent, DOCK_XIAOZHI_X,"XiaoZhi","AI",    "X", COL_ACCENT,   0xE67E22);
 }
 
 static lv_obj_t *create_footer(lv_obj_t *parent)
@@ -514,6 +519,8 @@ static menu_app_t hit_test(lv_coord_t x, lv_coord_t y)
         y >= DOCK_Y       && y <= DOCK_Y + DOCK_H)       return APP_RADIO;
     if (x >= DOCK_MM_X && x <= DOCK_MM_X + DOCK_W &&
         y >= DOCK_Y    && y <= DOCK_Y + DOCK_H)          return APP_MASTERMIND;
+    if (x >= DOCK_XIAOZHI_X && x <= DOCK_XIAOZHI_X + DOCK_W &&
+        y >= DOCK_Y         && y <= DOCK_Y + DOCK_H)        return APP_XIAOZHI;
 
     return APP_NONE;
 }
@@ -528,6 +535,7 @@ static lv_obj_t *card_for_app(menu_app_t app)
         case APP_FLIP_CLOCK: return g_flip_card;
         case APP_RADIO:      return g_radio_card;
         case APP_MASTERMIND: return g_mastermind_card;
+        case APP_XIAOZHI:    return g_xiaozhi_card;
         default:             return NULL;
     }
 }
@@ -552,6 +560,7 @@ static void launch_app(menu_app_t app)
         case APP_FLIP_CLOCK: flip_clock_start();    break;
         case APP_RADIO:      radio_headless_start();break;
         case APP_MASTERMIND: mastermind_start();    break;
+        case APP_XIAOZHI:    xiaozhi_headless_start(); break;
         default: break;
     }
 }
@@ -662,6 +671,7 @@ void menu_start(void)
     fade_in_obj(g_tomato_card,    760, 260);
     fade_in_obj(g_radio_card,     880, 260);
     fade_in_obj(g_mastermind_card,960, 260);
+    fade_in_obj(g_xiaozhi_card,1080, 260);
     fade_in_obj(footer, 800, 220);
 
     lv_timer_t *ready_timer = lv_timer_create(menu_ready_timer_cb, 1000, NULL);

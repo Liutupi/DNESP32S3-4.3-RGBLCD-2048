@@ -2,6 +2,7 @@
 #define BOARD_AUDIO_H
 
 #include "esp_err.h"
+#include "driver/i2s_std.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -24,6 +25,7 @@ bool board_audio_i2s_is_started(void);
 int board_audio_i2s_sample_rate(void);
 bool board_audio_i2s_write(const int16_t *samples, size_t sample_count);
 bool board_audio_play_beep_440hz_500ms(void);
+i2s_chan_handle_t board_audio_i2s_get_handle(void);
 
 #ifdef __cplusplus
 }
