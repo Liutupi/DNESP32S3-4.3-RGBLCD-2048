@@ -2,7 +2,49 @@
 
 > **最后更新**: 2026-06-15
 > **版本**: v1.2.0
-> **状态**: 集成 Nofrendo NES 模拟器（来自 retro-go）
+> **状态**: ✅ 编译成功，可烧录
+> **GitHub**: https://github.com/Liutupi/DNESP32S3-4.3-RGBLCD-2048 (commit: cf8189f)
+
+---
+
+## 🚀 快速烧录指南（下次直接用）
+
+### 1. 环境准备
+```powershell
+# 激活 ESP-IDF 环境
+C:\Users\Administrator\esp-idf\export.ps1
+```
+
+### 2. 拉取最新代码
+```powershell
+cd C:\DNESP32S3-4.3-RGBLCD-2048
+git pull origin main
+```
+
+### 3. 编译
+```powershell
+idf.py build
+```
+
+### 4. 烧录
+```powershell
+idf.py -p COM10 flash
+```
+
+### 5. 查看日志
+```powershell
+idf.py -p COM10 monitor
+```
+
+### 6. SD 卡准备
+把 `.nes` ROM 文件放到 SD 卡的 `FC game` 文件夹：
+```
+SD卡/FC game/
+├── 魂斗罗.nes
+├── 超级玛丽.nes
+├── 坦克大战.nes
+└── ...
+```
 
 ---
 
