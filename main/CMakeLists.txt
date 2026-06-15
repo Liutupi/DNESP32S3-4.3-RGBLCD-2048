@@ -8,6 +8,7 @@ idf_component_register(
         "APP/lvgl_demo.c"
         "APP/mastermind.c"
         "APP/menu.c"
+        "APP/nes_emu.c"
         "APP/photoviewer.c"
         "APP/flip_clock.c"
         "APP/radio_headless.c"
@@ -25,6 +26,7 @@ idf_component_register(
         "APP"
     REQUIRES
         BSP
+        nofrendo
         esp_wifi
         esp_event
         esp_netif
