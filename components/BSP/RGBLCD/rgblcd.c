@@ -55,7 +55,7 @@ esp_lcd_panel_handle_t rgblcd_init(void)
         rgbdev.vsw      = 3;                    /* 垂直同步宽度 */
         rgbdev.vbp      = 32;                   /* 垂直后廊 */
         rgbdev.vfp      = 13;                   /* 垂直前廊 */
-        rgbdev.pclk_hz  = 20 * 1000 * 1000;     /* 设置像素时钟 20Mhz */
+        rgbdev.pclk_hz  = 16 * 1000 * 1000;     /* 测试C: 降低像素时钟到16MHz */
     }
     // else if (rgbdev.id == 0x7084)               /* ATK-MD0700R-800480 */
     // {
@@ -92,16 +92,16 @@ esp_lcd_panel_handle_t rgblcd_init(void)
             .v_res              = rgbdev.pheight,   /* 垂直分辨率,即帧中的行数 */
             .hsync_back_porch   = rgbdev.hbp,       /* 水平后廊,hsync和行活动数据开始之间的PCLK数 */
             .hsync_front_porch  = rgbdev.hfp,       /* 水平前廊,活动数据结束和下一个hsync之间的PCLK数 */
-            .hsync_pulse_width  = rgbdev.vsw,       /* 垂直同步宽度,单位:行数 */
+            .hsync_pulse_width  = rgbdev.hsw,       /* 水平同步宽度,单位:PCLK周期 */
             .vsync_back_porch   = rgbdev.vbp,       /* 垂直后廊,vsync和帧开始之间的无效行数 */
             .vsync_front_porch  = rgbdev.vfp,       /* 垂直前廊,帧结束和下一个vsync之间的无效行数 */
-            .vsync_pulse_width  = rgbdev.hsw,       /* 水平同步宽度,单位:PCLK周期 */
+            .vsync_pulse_width  = rgbdev.vsw,       /* 垂直同步宽度,单位:行数 */
             .flags = {
                 .pclk_active_neg = true,            /* RGB数据在下降沿计时 */
             },
         },
         .flags.fb_in_psram = true,                  /* 在PSRAM中分配帧缓冲区 */
-        .bounce_buffer_size_px = (rgbdev.id == 0X4384) ? 800 * 10 : 272 * 10,  /* 解决写spiflash时,抖动问题 */
+        .bounce_buffer_size_px = (rgbdev.id == 0X4384) ? 800 * 10 : 272 * 10,
     };
 
     ESP_LOGI("RGBLCD", "Create RGB panel id=0x%04x, %ux%u, num_fbs=%d",

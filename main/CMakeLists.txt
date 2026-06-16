@@ -4,6 +4,7 @@ idf_component_register(
         "APP/app_network.c"
         "APP/board_audio.c"
         "APP/boot_ui.c"
+        "APP/fc_emulator.c"
         "APP/game2048.c"
         "APP/lvgl_demo.c"
         "APP/mastermind.c"
@@ -25,6 +26,7 @@ idf_component_register(
         "APP"
     REQUIRES
         BSP
+        nofrendo
         esp_wifi
         esp_event
         esp_netif

@@ -16,6 +16,7 @@
 #include "radio_headless.h"
 #include "mastermind.h"
 #include "xiaozhi_headless.h"
+#include "fc_emulator.h"
 #include "ui_fonts.h"
 #include "ui_text.h"
 #include "esp_wifi.h"
@@ -48,15 +49,16 @@
 #define CARD_H          244
 
 #define DOCK_Y          356
-#define DOCK_W          106
+#define DOCK_W          90
 #define DOCK_H          106
 
-#define DOCK_2048_X      32
-#define DOCK_REACT_X    164
-#define DOCK_TOMATO_X   296
-#define DOCK_RADIO_X    428
-#define DOCK_MM_X       560
-#define DOCK_XIAOZHI_X  692
+#define DOCK_2048_X      16
+#define DOCK_REACT_X    122
+#define DOCK_TOMATO_X   228
+#define DOCK_RADIO_X    334
+#define DOCK_FC_X       440
+#define DOCK_MM_X       546
+#define DOCK_XIAOZHI_X  652
 
 #define FONT_TITLE     &lv_font_montserrat_32
 #define FONT_BODY      &lv_font_montserrat_24
@@ -76,6 +78,7 @@ typedef enum {
     APP_RADIO,
     APP_MASTERMIND,
     APP_XIAOZHI,
+    APP_FC,
 } menu_app_t;
 
 static lv_obj_t *g_menu_scr = NULL;
@@ -89,6 +92,7 @@ static lv_obj_t *g_flip_card = NULL;
 static lv_obj_t *g_radio_card = NULL;
 static lv_obj_t *g_mastermind_card = NULL;
 static lv_obj_t *g_xiaozhi_card = NULL;
+static lv_obj_t *g_fc_card = NULL;
 static lv_obj_t *g_network_label = NULL;
 static lv_timer_t *g_network_timer = NULL;
 static lv_coord_t g_press_x = 0;
@@ -484,13 +488,14 @@ static lv_obj_t *create_dock_card(lv_obj_t *parent, lv_coord_t x,
 static void create_dock(lv_obj_t *parent)
 {
     /* 大卡片与 Dock 之间的分隔线 */
-    mk_panel(parent, 32, 348, 736, 1, COL_SHADOW, LV_OPA_50, 0);
+    mk_panel(parent, 16, 348, 768, 1, COL_SHADOW, LV_OPA_50, 0);
 
-    /* 每个 App 独立色条：2048=暖橙 React=冷蓝 Tomato=番茄红 Radio=薄荷绿 Master=紫 */
+    /* 每个 App 独立色条 */
     g_2048_card      = create_dock_card(parent, DOCK_2048_X,  "2048",   "Puzzle", "2", COL_ACCENT,   0xD07020);
     g_react_card     = create_dock_card(parent, DOCK_REACT_X, "React",  "Test",   "R", COL_ACCENT_2, 0x4A9FD5);
     g_tomato_card    = create_dock_card(parent, DOCK_TOMATO_X,"Tomato", "Timer",  "T", COL_ACCENT_2, 0xE05050);
     g_radio_card     = create_dock_card(parent, DOCK_RADIO_X, "Radio",  "Stream", "S", COL_ACCENT_2, 0x50A060);
+    g_fc_card        = create_dock_card(parent, DOCK_FC_X,    "FC",     "NES",    "F", COL_ACCENT,   0x2ECC71);
     g_mastermind_card= create_dock_card(parent, DOCK_MM_X,    "Master", "Mind",   "M", COL_ACCENT,   0x9060D0);
     g_xiaozhi_card   = create_dock_card(parent, DOCK_XIAOZHI_X,"XiaoZhi","AI",    "X", COL_ACCENT,   0xE67E22);
 }
@@ -517,6 +522,8 @@ static menu_app_t hit_test(lv_coord_t x, lv_coord_t y)
         y >= DOCK_Y        && y <= DOCK_Y + DOCK_H)      return APP_TOMATO;
     if (x >= DOCK_RADIO_X && x <= DOCK_RADIO_X + DOCK_W &&
         y >= DOCK_Y       && y <= DOCK_Y + DOCK_H)       return APP_RADIO;
+    if (x >= DOCK_FC_X && x <= DOCK_FC_X + DOCK_W &&
+        y >= DOCK_Y    && y <= DOCK_Y + DOCK_H)          return APP_FC;
     if (x >= DOCK_MM_X && x <= DOCK_MM_X + DOCK_W &&
         y >= DOCK_Y    && y <= DOCK_Y + DOCK_H)          return APP_MASTERMIND;
     if (x >= DOCK_XIAOZHI_X && x <= DOCK_XIAOZHI_X + DOCK_W &&
@@ -534,6 +541,7 @@ static lv_obj_t *card_for_app(menu_app_t app)
         case APP_TOMATO:     return g_tomato_card;
         case APP_FLIP_CLOCK: return g_flip_card;
         case APP_RADIO:      return g_radio_card;
+        case APP_FC:         return g_fc_card;
         case APP_MASTERMIND: return g_mastermind_card;
         case APP_XIAOZHI:    return g_xiaozhi_card;
         default:             return NULL;
@@ -559,6 +567,7 @@ static void launch_app(menu_app_t app)
         case APP_TOMATO:     tomato_timer_start();  break;
         case APP_FLIP_CLOCK: flip_clock_start();    break;
         case APP_RADIO:      radio_headless_start();break;
+        case APP_FC:         fc_emulator_show_rom_list(); break;
         case APP_MASTERMIND: mastermind_start();    break;
         case APP_XIAOZHI:    xiaozhi_headless_start(); break;
         default: break;
@@ -667,11 +676,12 @@ void menu_start(void)
     fade_slide_in_obj(photo, CARD_Y, 160, 420);
     fade_slide_in_obj(flip,  CARD_Y, 280, 420);
     fade_in_obj(g_2048_card,      500, 260);
-    fade_in_obj(g_react_card,     660, 260);
-    fade_in_obj(g_tomato_card,    760, 260);
-    fade_in_obj(g_radio_card,     880, 260);
-    fade_in_obj(g_mastermind_card,960, 260);
-    fade_in_obj(g_xiaozhi_card,1080, 260);
+    fade_in_obj(g_react_card,     600, 260);
+    fade_in_obj(g_tomato_card,    700, 260);
+    fade_in_obj(g_radio_card,     800, 260);
+    fade_in_obj(g_fc_card,        900, 260);
+    fade_in_obj(g_mastermind_card,1000, 260);
+    fade_in_obj(g_xiaozhi_card,   1100, 260);
     fade_in_obj(footer, 800, 220);
 
     lv_timer_t *ready_timer = lv_timer_create(menu_ready_timer_cb, 1000, NULL);

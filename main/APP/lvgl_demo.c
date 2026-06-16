@@ -206,6 +206,26 @@ bool lvgl_demo_is_suspended(void)
     return s_lvgl_suspended;
 }
 
+bool lvgl_demo_get_framebuffers(void **fb0, void **fb1, int *w, int *h)
+{
+    if (lcddev.lcd_panel_handle == NULL) {
+        return false;
+    }
+
+    void *buf[2] = {0};
+    esp_err_t ret = esp_lcd_rgb_panel_get_frame_buffer(lcddev.lcd_panel_handle, 2, &buf[0], &buf[1]);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Get RGB frame buffer failed: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    if (fb0) *fb0 = buf[0];
+    if (fb1) *fb1 = buf[1];
+    if (w)   *w   = lcddev.width;
+    if (h)   *h   = lcddev.height;
+    return true;
+}
+
 lv_obj_t * debug_label = NULL;
 
 /**

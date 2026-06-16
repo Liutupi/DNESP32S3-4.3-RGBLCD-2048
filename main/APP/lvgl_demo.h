@@ -32,6 +32,7 @@ void lvgl_demo_suspend(void);                                                   
 void lvgl_demo_resume(void);                                                                        /* 恢复LVGL tick/flush */
 void lvgl_demo_rebind_display(void);                                                                /* RGB LCD恢复后重新绑定显示缓冲 */
 bool lvgl_demo_is_suspended(void);                                                                  /* 查询LVGL是否暂停 */
+bool lvgl_demo_get_framebuffers(void **fb0, void **fb1, int *w, int *h);                            /* 获取RGB LCD framebuffer */
 void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data);                               /* 图形库的触摸屏读取回调函数 */
 
 #endif
